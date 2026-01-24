@@ -1,6 +1,6 @@
 import Foundation
 import AppKit
-import ScreenCaptureKit
+@preconcurrency import ScreenCaptureKit
 
 /// Manages accessibility and screen recording permissions
 public final class PermissionManager: @unchecked Sendable {
@@ -19,7 +19,8 @@ public final class PermissionManager: @unchecked Sendable {
     /// - Returns: Whether the permission is currently granted
     @discardableResult
     public func requestAccessibilityPermission() -> Bool {
-        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+        // Use string directly to avoid Swift 6 concurrency issues with global C variables
+        let options = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
         return AXIsProcessTrustedWithOptions(options)
     }
 

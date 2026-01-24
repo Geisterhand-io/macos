@@ -51,16 +51,13 @@ public actor GeisterhandServer {
     }
 
     /// Stops the HTTP server
-    public func stop() async {
+    public func stop() {
         guard isRunning else {
             logger.warning("Server is not running")
             return
         }
 
         logger.info("Stopping Geisterhand server")
-
-        // Signal shutdown
-        await application?.shutdown()
 
         self.application = nil
         self.isRunning = false
@@ -179,10 +176,6 @@ public final class ServerManager: @unchecked Sendable {
 
         serverTask?.cancel()
         serverTask = nil
-
-        Task {
-            await server?.stop()
-        }
         server = nil
     }
 

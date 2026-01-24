@@ -153,7 +153,7 @@ struct StatusRow: View {
 
             Text(status)
                 .font(.caption)
-                .foregroundStyle(isOK ? .secondary : .orange)
+                .foregroundColor(isOK ? .secondary : .orange)
         }
     }
 }

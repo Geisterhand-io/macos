@@ -4,7 +4,7 @@ import PackageDescription
 let package = Package(
     name: "Geisterhand",
     platforms: [
-        .macOS(.v13)
+        .macOS(.v14)
     ],
     products: [
         .executable(name: "GeisterhandApp", targets: ["GeisterhandApp"]),
@@ -18,10 +18,7 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "GeisterhandApp",
-            dependencies: ["GeisterhandCore"],
-            resources: [
-                .process("Resources")
-            ]
+            dependencies: ["GeisterhandCore"]
         ),
         .executableTarget(
             name: "geisterhand",

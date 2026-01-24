@@ -4,7 +4,7 @@ A macOS screen automation tool that provides an HTTP API and CLI for controlling
 
 ## Requirements
 
-- macOS 13.0+
+- macOS 14.0+
 - Swift 6.0+
 - Accessibility permission (for keyboard/mouse control)
 - Screen Recording permission (for screenshots)
