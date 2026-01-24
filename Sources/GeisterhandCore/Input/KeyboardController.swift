@@ -1,0 +1,244 @@
+import Foundation
+import CoreGraphics
+import Carbon.HIToolbox
+
+/// Controls keyboard input using CGEvent
+public final class KeyboardController: Sendable {
+    public static let shared = KeyboardController()
+
+    private init() {}
+
+    /// Types a string of text
+    /// - Parameters:
+    ///   - text: The text to type
+    ///   - delayMs: Delay between keystrokes in milliseconds
+    /// - Throws: KeyboardError if typing fails
+    /// - Returns: Number of characters successfully typed
+    @discardableResult
+    public func type(text: String, delayMs: Int = 0) throws -> Int {
+        var typedCount = 0
+
+        for character in text {
+            try typeCharacter(character)
+            typedCount += 1
+
+            if delayMs > 0 {
+                Thread.sleep(forTimeInterval: Double(delayMs) / 1000.0)
+            }
+        }
+
+        return typedCount
+    }
+
+    /// Types a single character
+    /// - Parameter character: The character to type
+    /// - Throws: KeyboardError if typing fails
+    public func typeCharacter(_ character: Character) throws {
+        // Try to find key code for this character
+        if let (keyCode, needsShift) = KeyCodeMap.keyCodeForCharacter(character) {
+            if needsShift {
+                try pressKey(keyCode: keyCode, modifiers: [.shift])
+            } else {
+                try pressKey(keyCode: keyCode)
+            }
+        } else {
+            // Fall back to Unicode input for special characters
+            try typeUnicodeCharacter(character)
+        }
+    }
+
+    /// Presses a key by name with optional modifiers
+    /// - Parameters:
+    ///   - key: The key name (e.g., "a", "return", "f1")
+    ///   - modifiers: Key modifiers to hold
+    /// - Throws: KeyboardError if the key press fails
+    public func pressKey(key: String, modifiers: [KeyModifier] = []) throws {
+        guard let keyCode = KeyCodeMap.keyCode(for: key) else {
+            throw KeyboardError.unknownKey(key)
+        }
+
+        try pressKey(keyCode: keyCode, modifiers: modifiers)
+    }
+
+    /// Presses a key by key code with optional modifiers
+    /// - Parameters:
+    ///   - keyCode: The CGKeyCode to press
+    ///   - modifiers: Key modifiers to hold
+    /// - Throws: KeyboardError if the key press fails
+    public func pressKey(keyCode: UInt16, modifiers: [KeyModifier] = []) throws {
+        let modifierFlags = self.modifierFlags(for: modifiers)
+
+        // Press modifiers down
+        for modifier in modifiers {
+            try pressModifierDown(modifier)
+        }
+
+        // Key down
+        guard let keyDown = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: true) else {
+            throw KeyboardError.eventCreationFailed
+        }
+        if !modifiers.isEmpty {
+            keyDown.flags = modifierFlags
+        }
+        keyDown.post(tap: .cghidEventTap)
+
+        // Key up
+        guard let keyUp = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: false) else {
+            throw KeyboardError.eventCreationFailed
+        }
+        if !modifiers.isEmpty {
+            keyUp.flags = modifierFlags
+        }
+        keyUp.post(tap: .cghidEventTap)
+
+        // Release modifiers
+        for modifier in modifiers.reversed() {
+            try releaseModifier(modifier)
+        }
+    }
+
+    /// Holds a key down without releasing
+    /// - Parameters:
+    ///   - key: The key name
+    ///   - modifiers: Key modifiers to hold
+    /// - Throws: KeyboardError if the key press fails
+    public func keyDown(key: String, modifiers: [KeyModifier] = []) throws {
+        guard let keyCode = KeyCodeMap.keyCode(for: key) else {
+            throw KeyboardError.unknownKey(key)
+        }
+
+        let modifierFlags = self.modifierFlags(for: modifiers)
+
+        guard let keyDown = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: true) else {
+            throw KeyboardError.eventCreationFailed
+        }
+        if !modifiers.isEmpty {
+            keyDown.flags = modifierFlags
+        }
+        keyDown.post(tap: .cghidEventTap)
+    }
+
+    /// Releases a held key
+    /// - Parameters:
+    ///   - key: The key name
+    ///   - modifiers: Key modifiers that were held
+    /// - Throws: KeyboardError if the key release fails
+    public func keyUp(key: String, modifiers: [KeyModifier] = []) throws {
+        guard let keyCode = KeyCodeMap.keyCode(for: key) else {
+            throw KeyboardError.unknownKey(key)
+        }
+
+        let modifierFlags = self.modifierFlags(for: modifiers)
+
+        guard let keyUp = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: false) else {
+            throw KeyboardError.eventCreationFailed
+        }
+        if !modifiers.isEmpty {
+            keyUp.flags = modifierFlags
+        }
+        keyUp.post(tap: .cghidEventTap)
+    }
+
+    // MARK: - Private Helpers
+
+    private func typeUnicodeCharacter(_ character: Character) throws {
+        let string = String(character)
+        guard let unicodeScalar = string.unicodeScalars.first else {
+            throw KeyboardError.invalidCharacter(character)
+        }
+
+        // Create a key event and set unicode string
+        guard let event = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: true) else {
+            throw KeyboardError.eventCreationFailed
+        }
+
+        var unichar = UniChar(unicodeScalar.value)
+        event.keyboardSetUnicodeString(stringLength: 1, unicodeString: &unichar)
+        event.post(tap: .cghidEventTap)
+
+        // Key up
+        guard let keyUp = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: false) else {
+            throw KeyboardError.eventCreationFailed
+        }
+        keyUp.keyboardSetUnicodeString(stringLength: 1, unicodeString: &unichar)
+        keyUp.post(tap: .cghidEventTap)
+    }
+
+    private func pressModifierDown(_ modifier: KeyModifier) throws {
+        let keyCode = modifierKeyCode(for: modifier)
+
+        guard let event = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: true) else {
+            throw KeyboardError.eventCreationFailed
+        }
+        event.flags = singleModifierFlag(for: modifier)
+        event.post(tap: .cghidEventTap)
+    }
+
+    private func releaseModifier(_ modifier: KeyModifier) throws {
+        let keyCode = modifierKeyCode(for: modifier)
+
+        guard let event = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: false) else {
+            throw KeyboardError.eventCreationFailed
+        }
+        event.post(tap: .cghidEventTap)
+    }
+
+    private func modifierKeyCode(for modifier: KeyModifier) -> UInt16 {
+        switch modifier {
+        case .cmd, .command:
+            return UInt16(kVK_Command)
+        case .ctrl, .control:
+            return UInt16(kVK_Control)
+        case .alt, .option:
+            return UInt16(kVK_Option)
+        case .shift:
+            return UInt16(kVK_Shift)
+        case .fn, .function:
+            return UInt16(kVK_Function)
+        }
+    }
+
+    private func modifierFlags(for modifiers: [KeyModifier]) -> CGEventFlags {
+        var flags: CGEventFlags = []
+
+        for modifier in modifiers {
+            flags.insert(singleModifierFlag(for: modifier))
+        }
+
+        return flags
+    }
+
+    private func singleModifierFlag(for modifier: KeyModifier) -> CGEventFlags {
+        switch modifier {
+        case .cmd, .command:
+            return .maskCommand
+        case .ctrl, .control:
+            return .maskControl
+        case .alt, .option:
+            return .maskAlternate
+        case .shift:
+            return .maskShift
+        case .fn, .function:
+            return .maskSecondaryFn
+        }
+    }
+}
+
+// MARK: - Error Types
+
+public enum KeyboardError: Error, LocalizedError {
+    case eventCreationFailed
+    case unknownKey(String)
+    case invalidCharacter(Character)
+
+    public var errorDescription: String? {
+        switch self {
+        case .eventCreationFailed:
+            return "Failed to create keyboard event. Check accessibility permissions."
+        case .unknownKey(let key):
+            return "Unknown key: \(key)"
+        case .invalidCharacter(let char):
+            return "Invalid character: \(char)"
+        }
+    }
+}
