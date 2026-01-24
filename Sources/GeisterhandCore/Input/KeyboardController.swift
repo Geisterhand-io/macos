@@ -34,17 +34,8 @@ public final class KeyboardController: Sendable {
     /// - Parameter character: The character to type
     /// - Throws: KeyboardError if typing fails
     public func typeCharacter(_ character: Character) throws {
-        // Try to find key code for this character
-        if let (keyCode, needsShift) = KeyCodeMap.keyCodeForCharacter(character) {
-            if needsShift {
-                try pressKey(keyCode: keyCode, modifiers: [.shift])
-            } else {
-                try pressKey(keyCode: keyCode)
-            }
-        } else {
-            // Fall back to Unicode input for special characters
-            try typeUnicodeCharacter(character)
-        }
+        // Always use Unicode input for consistent behavior across keyboard layouts
+        try typeUnicodeCharacter(character)
     }
 
     /// Presses a key by name with optional modifiers
