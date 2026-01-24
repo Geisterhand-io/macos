@@ -129,6 +129,10 @@ Geisterhand requires two macOS permissions:
 
 The app will prompt for these permissions on first use, or you can grant them manually.
 
+## Author
+
+Skelpo GmbH
+
 ## License
 
 MIT
