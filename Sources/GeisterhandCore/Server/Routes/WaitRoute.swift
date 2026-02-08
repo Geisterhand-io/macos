@@ -3,8 +3,11 @@ import Hummingbird
 
 /// Handler for /wait endpoint
 public struct WaitRoute: Sendable {
+    let targetApp: TargetApp?
 
-    public init() {}
+    public init(targetApp: TargetApp? = nil) {
+        self.targetApp = targetApp
+    }
 
     /// Handles POST /wait request
     /// Body: { "title": string?, "role": string?, "pid": number?, "timeout_ms": number?, "poll_interval_ms": number?, "condition": string? }
@@ -48,6 +51,7 @@ public struct WaitRoute: Sendable {
             maxResults: 1
         )
 
+        let effectivePid = waitRequest.pid ?? targetApp?.pid
         let accessibilityService = AccessibilityService.shared
         let startTime = Date()
         var waitedMs = 0
@@ -55,7 +59,7 @@ public struct WaitRoute: Sendable {
 
         // Poll loop
         while waitedMs < timeoutMs {
-            let findResult = accessibilityService.findElements(pid: waitRequest.pid, query: query)
+            let findResult = accessibilityService.findElements(pid: effectivePid, query: query)
             let elementFound = findResult.success && (findResult.elements?.isEmpty == false)
             let element = findResult.elements?.first
             lastElement = element

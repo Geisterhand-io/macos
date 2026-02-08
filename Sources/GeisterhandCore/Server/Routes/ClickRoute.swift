@@ -5,8 +5,11 @@ import ApplicationServices
 
 /// Handler for /click endpoint
 public struct ClickRoute: Sendable {
+    let targetApp: TargetApp?
 
-    public init() {}
+    public init(targetApp: TargetApp? = nil) {
+        self.targetApp = targetApp
+    }
 
     // MARK: - POST /click/element
 
@@ -42,8 +45,9 @@ public struct ClickRoute: Sendable {
         )
 
         // Find the element
+        let effectivePid = elementRequest.pid ?? targetApp?.pid
         let accessibilityService = AccessibilityService.shared
-        let findResult = accessibilityService.findElements(pid: elementRequest.pid, query: query)
+        let findResult = accessibilityService.findElements(pid: effectivePid, query: query)
 
         guard findResult.success, let elements = findResult.elements, let element = elements.first else {
             let error = findResult.error ?? "No matching element found"

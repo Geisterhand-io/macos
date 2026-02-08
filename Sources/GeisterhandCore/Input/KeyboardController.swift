@@ -12,14 +12,15 @@ public final class KeyboardController: Sendable {
     /// - Parameters:
     ///   - text: The text to type
     ///   - delayMs: Delay between keystrokes in milliseconds
+    ///   - targetPid: Optional target process ID for PID-targeted events
     /// - Throws: KeyboardError if typing fails
     /// - Returns: Number of characters successfully typed
     @discardableResult
-    public func type(text: String, delayMs: Int = 0) throws -> Int {
+    public func type(text: String, delayMs: Int = 0, targetPid: Int32? = nil) throws -> Int {
         var typedCount = 0
 
         for character in text {
-            try typeCharacter(character)
+            try typeCharacter(character, targetPid: targetPid)
             typedCount += 1
 
             if delayMs > 0 {
@@ -31,11 +32,13 @@ public final class KeyboardController: Sendable {
     }
 
     /// Types a single character
-    /// - Parameter character: The character to type
+    /// - Parameters:
+    ///   - character: The character to type
+    ///   - targetPid: Optional target process ID for PID-targeted events
     /// - Throws: KeyboardError if typing fails
-    public func typeCharacter(_ character: Character) throws {
+    public func typeCharacter(_ character: Character, targetPid: Int32? = nil) throws {
         // Always use Unicode input for consistent behavior across keyboard layouts
-        try typeUnicodeCharacter(character)
+        try typeUnicodeCharacter(character, targetPid: targetPid)
     }
 
     /// Presses a key by name with optional modifiers
@@ -176,7 +179,7 @@ public final class KeyboardController: Sendable {
 
     // MARK: - Private Helpers
 
-    private func typeUnicodeCharacter(_ character: Character) throws {
+    private func typeUnicodeCharacter(_ character: Character, targetPid: Int32? = nil) throws {
         let string = String(character)
         guard let unicodeScalar = string.unicodeScalars.first else {
             throw KeyboardError.invalidCharacter(character)
@@ -189,14 +192,24 @@ public final class KeyboardController: Sendable {
 
         var unichar = UniChar(unicodeScalar.value)
         event.keyboardSetUnicodeString(stringLength: 1, unicodeString: &unichar)
-        event.post(tap: .cghidEventTap)
+
+        if let pid = targetPid {
+            event.postToPid(pid)
+        } else {
+            event.post(tap: .cghidEventTap)
+        }
 
         // Key up
         guard let keyUp = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: false) else {
             throw KeyboardError.eventCreationFailed
         }
         keyUp.keyboardSetUnicodeString(stringLength: 1, unicodeString: &unichar)
-        keyUp.post(tap: .cghidEventTap)
+
+        if let pid = targetPid {
+            keyUp.postToPid(pid)
+        } else {
+            keyUp.post(tap: .cghidEventTap)
+        }
     }
 
     private func pressModifierDown(_ modifier: KeyModifier) throws {

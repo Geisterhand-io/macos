@@ -1,5 +1,19 @@
 import Foundation
 
+// MARK: - Target App (on-demand mode)
+
+public struct TargetApp: Sendable {
+    public let pid: Int32
+    public let appName: String
+    public let bundleIdentifier: String?
+
+    public init(pid: Int32, appName: String, bundleIdentifier: String?) {
+        self.pid = pid
+        self.appName = appName
+        self.bundleIdentifier = bundleIdentifier
+    }
+}
+
 // MARK: - Status Response
 
 public struct StatusResponse: Codable, Sendable {
@@ -9,6 +23,7 @@ public struct StatusResponse: Codable, Sendable {
     public let permissions: PermissionStatus
     public let frontmostApp: AppInfo?
     public let screenSize: ScreenSize
+    public let targetApp: AppInfo?
 
     public init(
         status: String,
@@ -16,7 +31,8 @@ public struct StatusResponse: Codable, Sendable {
         serverRunning: Bool,
         permissions: PermissionStatus,
         frontmostApp: AppInfo?,
-        screenSize: ScreenSize
+        screenSize: ScreenSize,
+        targetApp: AppInfo? = nil
     ) {
         self.status = status
         self.version = version
@@ -24,6 +40,7 @@ public struct StatusResponse: Codable, Sendable {
         self.permissions = permissions
         self.frontmostApp = frontmostApp
         self.screenSize = screenSize
+        self.targetApp = targetApp
     }
 }
 

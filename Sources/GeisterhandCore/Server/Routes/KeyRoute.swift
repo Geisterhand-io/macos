@@ -3,8 +3,11 @@ import Hummingbird
 
 /// Handler for /key endpoint
 public struct KeyRoute: Sendable {
+    let targetApp: TargetApp?
 
-    public init() {}
+    public init(targetApp: TargetApp? = nil) {
+        self.targetApp = targetApp
+    }
 
     /// Handles POST /key request
     /// Body: { "key": "s", "modifiers": ["cmd", "shift", ...] }
@@ -30,10 +33,12 @@ public struct KeyRoute: Sendable {
 
         let modifiers = keyRequest.modifiers ?? []
 
+        let effectivePid = keyRequest.pid ?? targetApp?.pid
+
         if let path = keyRequest.path {
             // AX action mode: map key to accessibility action
             return try handleAXAction(key: keyRequest.key, path: path, modifiers: modifiers)
-        } else if let pid = keyRequest.pid {
+        } else if let pid = effectivePid {
             // PID-targeted CGEvent mode
             return try handlePIDTargeted(key: keyRequest.key, modifiers: modifiers, pid: pid)
         } else {

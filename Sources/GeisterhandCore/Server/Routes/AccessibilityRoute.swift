@@ -3,8 +3,11 @@ import Hummingbird
 
 /// Handler for /accessibility/* endpoints
 public struct AccessibilityRoute: Sendable {
+    let targetApp: TargetApp?
 
-    public init() {}
+    public init(targetApp: TargetApp? = nil) {
+        self.targetApp = targetApp
+    }
 
     // MARK: - GET /accessibility/tree
 
@@ -19,7 +22,7 @@ public struct AccessibilityRoute: Sendable {
         let service = AccessibilityService.shared
 
         // Parse query parameters
-        let pid = request.uri.queryParameters.get("pid").flatMap { Int32($0) }
+        let pid = request.uri.queryParameters.get("pid").flatMap { Int32($0) } ?? targetApp?.pid
         let maxDepth = request.uri.queryParameters.get("maxDepth").flatMap { Int($0) }
         let format = request.uri.queryParameters.get("format") ?? "tree"
         let includeActions = request.uri.queryParameters.get("includeActions").flatMap { $0.lowercased() != "false" } ?? true
@@ -54,7 +57,7 @@ public struct AccessibilityRoute: Sendable {
         let service = AccessibilityService.shared
 
         // Parse query parameters
-        let pid = request.uri.queryParameters.get("pid").flatMap { Int32($0) }
+        let pid = request.uri.queryParameters.get("pid").flatMap { Int32($0) } ?? targetApp?.pid
         let role = request.uri.queryParameters.get("role")
         let title = request.uri.queryParameters.get("title")
         let titleContains = request.uri.queryParameters.get("titleContains")
@@ -96,7 +99,7 @@ public struct AccessibilityRoute: Sendable {
         let service = AccessibilityService.shared
 
         // Parse query parameters
-        let pid = request.uri.queryParameters.get("pid").flatMap { Int32($0) }
+        let pid = request.uri.queryParameters.get("pid").flatMap { Int32($0) } ?? targetApp?.pid
 
         // Get focused element
         let response = service.getFocusedElement(pid: pid)

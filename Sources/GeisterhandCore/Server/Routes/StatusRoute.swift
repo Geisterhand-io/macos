@@ -5,8 +5,11 @@ import AppKit
 /// Handler for /status endpoint
 public struct StatusRoute: Sendable {
     public static let version = "1.0.0"
+    let targetApp: TargetApp?
 
-    public init() {}
+    public init(targetApp: TargetApp? = nil) {
+        self.targetApp = targetApp
+    }
 
     /// Handles GET /status request
     public func handle(_ request: Request, context: some RequestContext) async throws -> Response {
@@ -19,13 +22,19 @@ public struct StatusRoute: Sendable {
         // Get screen size
         let screenSize = await screenService.getMainDisplaySize()
 
+        // Convert targetApp to AppInfo for response
+        let targetAppInfo: AppInfo? = targetApp.map {
+            AppInfo(name: $0.appName, bundleIdentifier: $0.bundleIdentifier, processIdentifier: $0.pid)
+        }
+
         let response = StatusResponse(
             status: "ok",
             version: Self.version,
             serverRunning: true,
             permissions: permissionManager.permissionStatus,
             frontmostApp: frontmostApp,
-            screenSize: screenSize
+            screenSize: screenSize,
+            targetApp: targetAppInfo
         )
 
         return try encodeJSON(response)

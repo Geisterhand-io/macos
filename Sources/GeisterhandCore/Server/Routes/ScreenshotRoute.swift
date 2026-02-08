@@ -3,8 +3,11 @@ import Hummingbird
 
 /// Handler for /screenshot endpoint
 public struct ScreenshotRoute: Sendable {
+    let targetApp: TargetApp?
 
-    public init() {}
+    public init(targetApp: TargetApp? = nil) {
+        self.targetApp = targetApp
+    }
 
     /// Handles GET /screenshot request
     /// Query params:
@@ -23,11 +26,14 @@ public struct ScreenshotRoute: Sendable {
         let windowIdString = request.uri.queryParameters.get("windowId")
         let windowId: UInt32? = windowIdString.flatMap { UInt32($0) }
 
+        // Use targetApp as fallback for app name
+        let effectiveAppName = appName ?? targetApp?.appName
+
         do {
             // Determine capture mode: window (by app or ID) vs screen
-            if let appName = appName {
+            if let effectiveAppName = effectiveAppName {
                 // Capture by app name
-                return try await captureByApp(appName: appName, format: format, screenService: screenService)
+                return try await captureByApp(appName: effectiveAppName, format: format, screenService: screenService)
             } else if let windowId = windowId {
                 // Capture by window ID
                 return try await captureByWindowId(windowId: windowId, format: format, screenService: screenService)

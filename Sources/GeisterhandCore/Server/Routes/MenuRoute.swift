@@ -3,8 +3,11 @@ import Hummingbird
 
 /// Handler for /menu endpoints
 public struct MenuRoute: Sendable {
+    let targetApp: TargetApp?
 
-    public init() {}
+    public init(targetApp: TargetApp? = nil) {
+        self.targetApp = targetApp
+    }
 
     // MARK: - GET /menu
 
@@ -15,7 +18,8 @@ public struct MenuRoute: Sendable {
         let service = MenuService.shared
 
         // Parse query parameters
-        guard let appName = request.uri.queryParameters.get("app"), !appName.isEmpty else {
+        let appName = request.uri.queryParameters.get("app") ?? targetApp?.appName
+        guard let appName = appName, !appName.isEmpty else {
             return try errorResponse(message: "Missing required query parameter: app", code: 400)
         }
 
@@ -48,8 +52,11 @@ public struct MenuRoute: Sendable {
             return try errorResponse(message: "Invalid request body: \(error.localizedDescription)", code: 400)
         }
 
+        // Use targetApp as fallback for app name
+        let effectiveApp = triggerRequest.app.isEmpty ? (targetApp?.appName ?? "") : triggerRequest.app
+
         // Validate
-        guard !triggerRequest.app.isEmpty else {
+        guard !effectiveApp.isEmpty else {
             return try errorResponse(message: "App name cannot be empty", code: 400)
         }
         guard !triggerRequest.path.isEmpty else {
@@ -57,7 +64,7 @@ public struct MenuRoute: Sendable {
         }
 
         // Trigger menu
-        let response = service.triggerMenu(appName: triggerRequest.app, path: triggerRequest.path, background: triggerRequest.background ?? false)
+        let response = service.triggerMenu(appName: effectiveApp, path: triggerRequest.path, background: triggerRequest.background ?? false)
 
         if response.success {
             return try encodeJSON(response)

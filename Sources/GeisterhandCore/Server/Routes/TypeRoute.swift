@@ -3,8 +3,11 @@ import Hummingbird
 
 /// Handler for /type endpoint
 public struct TypeRoute: Sendable {
+    let targetApp: TargetApp?
 
-    public init() {}
+    public init(targetApp: TargetApp? = nil) {
+        self.targetApp = targetApp
+    }
 
     /// Handles POST /type request
     /// Body: { "text": "string to type", "delay_ms": number }
@@ -36,10 +39,10 @@ public struct TypeRoute: Sendable {
             return try handleSetValue(text: typeRequest.text, path: path)
         } else if hasElementTarget {
             // Query-based element targeting: find element then setValue
-            return try handleElementQuery(typeRequest: typeRequest)
+            return try handleElementQuery(typeRequest: typeRequest, effectivePid: typeRequest.pid ?? targetApp?.pid)
         } else {
             // Standard CGEvent keyboard typing
-            return try handleCGEventType(typeRequest: typeRequest)
+            return try handleCGEventType(typeRequest: typeRequest, targetPid: targetApp?.pid)
         }
     }
 
@@ -67,7 +70,7 @@ public struct TypeRoute: Sendable {
 
     /// Find element by query criteria, then set its value
     @MainActor
-    private func handleElementQuery(typeRequest: TypeRequest) throws -> Response {
+    private func handleElementQuery(typeRequest: TypeRequest, effectivePid: Int32?) throws -> Response {
         let service = AccessibilityService.shared
 
         let query = ElementQuery(
@@ -77,7 +80,7 @@ public struct TypeRoute: Sendable {
             maxResults: 1
         )
 
-        let findResult = service.findElements(pid: typeRequest.pid, query: query)
+        let findResult = service.findElements(pid: effectivePid, query: query)
 
         guard findResult.success, let elements = findResult.elements, let element = elements.first else {
             let error = findResult.error ?? "No matching element found"
@@ -105,12 +108,12 @@ public struct TypeRoute: Sendable {
     }
 
     /// Standard CGEvent-based keyboard typing (original behavior)
-    private func handleCGEventType(typeRequest: TypeRequest) throws -> Response {
+    private func handleCGEventType(typeRequest: TypeRequest, targetPid: Int32? = nil) throws -> Response {
         let keyboardController = KeyboardController.shared
         let delayMs = typeRequest.delayMs ?? 0
 
         do {
-            let typedCount = try keyboardController.type(text: typeRequest.text, delayMs: delayMs)
+            let typedCount = try keyboardController.type(text: typeRequest.text, delayMs: delayMs, targetPid: targetPid)
 
             let response = TypeResponse(
                 success: true,

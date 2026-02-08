@@ -11,16 +11,54 @@ public actor GeisterhandServer {
     private let host: String
     private let port: Int
     private let logger: Logger
+    public let targetApp: TargetApp?
 
     public private(set) var isRunning: Bool = false
 
-    public init(host: String = defaultHost, port: Int = defaultPort) {
+    public init(host: String = defaultHost, port: Int = defaultPort, targetApp: TargetApp? = nil) {
         self.host = host
         self.port = port
+        self.targetApp = targetApp
 
         var logger = Logger(label: "com.geisterhand.server")
         logger.logLevel = .info
         self.logger = logger
+    }
+
+    /// Find an available port by binding to port 0
+    public static func findAvailablePort(host: String = defaultHost) throws -> Int {
+        let socketFD = Darwin.socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)
+        guard socketFD >= 0 else {
+            throw NSError(domain: "GeisterhandServer", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to create socket"])
+        }
+        defer { Darwin.close(socketFD) }
+
+        var addr = sockaddr_in()
+        addr.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+        addr.sin_family = sa_family_t(AF_INET)
+        addr.sin_port = 0 // Let the OS choose
+        addr.sin_addr.s_addr = inet_addr(host)
+
+        let bindResult = withUnsafePointer(to: &addr) { ptr in
+            ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockaddrPtr in
+                Darwin.bind(socketFD, sockaddrPtr, socklen_t(MemoryLayout<sockaddr_in>.size))
+            }
+        }
+        guard bindResult == 0 else {
+            throw NSError(domain: "GeisterhandServer", code: 2, userInfo: [NSLocalizedDescriptionKey: "Failed to bind socket"])
+        }
+
+        var addrLen = socklen_t(MemoryLayout<sockaddr_in>.size)
+        let getsocknameResult = withUnsafeMutablePointer(to: &addr) { ptr in
+            ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockaddrPtr in
+                Darwin.getsockname(socketFD, sockaddrPtr, &addrLen)
+            }
+        }
+        guard getsocknameResult == 0 else {
+            throw NSError(domain: "GeisterhandServer", code: 3, userInfo: [NSLocalizedDescriptionKey: "Failed to get socket name"])
+        }
+
+        return Int(UInt16(bigEndian: addr.sin_port))
     }
 
     /// Starts the HTTP server
@@ -68,19 +106,19 @@ public actor GeisterhandServer {
         let router = Router()
 
         // Status endpoint
-        let statusRoute = StatusRoute()
+        let statusRoute = StatusRoute(targetApp: targetApp)
         router.get("/status") { request, context in
             try await statusRoute.handle(request, context: context)
         }
 
         // Screenshot endpoint
-        let screenshotRoute = ScreenshotRoute()
+        let screenshotRoute = ScreenshotRoute(targetApp: targetApp)
         router.get("/screenshot") { request, context in
             try await screenshotRoute.handle(request, context: context)
         }
 
         // Click endpoint
-        let clickRoute = ClickRoute()
+        let clickRoute = ClickRoute(targetApp: targetApp)
         router.post("/click") { request, context in
             try await clickRoute.handle(request, context: context)
         }
@@ -89,31 +127,31 @@ public actor GeisterhandServer {
         }
 
         // Type endpoint
-        let typeRoute = TypeRoute()
+        let typeRoute = TypeRoute(targetApp: targetApp)
         router.post("/type") { request, context in
             try await typeRoute.handle(request, context: context)
         }
 
         // Key endpoint
-        let keyRoute = KeyRoute()
+        let keyRoute = KeyRoute(targetApp: targetApp)
         router.post("/key") { request, context in
             try await keyRoute.handle(request, context: context)
         }
 
         // Scroll endpoint
-        let scrollRoute = ScrollRoute()
+        let scrollRoute = ScrollRoute(targetApp: targetApp)
         router.post("/scroll") { request, context in
             try await scrollRoute.handle(request, context: context)
         }
 
         // Wait endpoint
-        let waitRoute = WaitRoute()
+        let waitRoute = WaitRoute(targetApp: targetApp)
         router.post("/wait") { request, context in
             try await waitRoute.handle(request, context: context)
         }
 
         // Accessibility endpoints
-        let accessibilityRoute = AccessibilityRoute()
+        let accessibilityRoute = AccessibilityRoute(targetApp: targetApp)
         router.get("/accessibility/tree") { request, context in
             try await accessibilityRoute.handleTree(request, context: context)
         }
@@ -128,12 +166,25 @@ public actor GeisterhandServer {
         }
 
         // Menu endpoints
-        let menuRoute = MenuRoute()
+        let menuRoute = MenuRoute(targetApp: targetApp)
         router.get("/menu") { request, context in
             try await menuRoute.handleGet(request, context: context)
         }
         router.post("/menu") { request, context in
             try await menuRoute.handleTrigger(request, context: context)
+        }
+
+        // Quit endpoint (for on-demand mode)
+        router.post("/quit") { _, _ in
+            // Schedule exit after response is sent
+            DispatchQueue.global().asyncAfter(deadline: .now() + 0.1) {
+                exit(0)
+            }
+            return Response(
+                status: .ok,
+                headers: [.contentType: "application/json"],
+                body: .init(byteBuffer: ByteBuffer(string: "{\"success\":true,\"message\":\"Server shutting down\"}"))
+            )
         }
 
         // Health check (alias)
@@ -165,7 +216,8 @@ public actor GeisterhandServer {
                     {"method": "GET", "path": "/accessibility/focused", "description": "Get focused element"},
                     {"method": "POST", "path": "/accessibility/action", "description": "Perform action on element"},
                     {"method": "GET", "path": "/menu", "description": "Get application menu structure"},
-                    {"method": "POST", "path": "/menu", "description": "Trigger menu item by path"}
+                    {"method": "POST", "path": "/menu", "description": "Trigger menu item by path"},
+                    {"method": "POST", "path": "/quit", "description": "Shut down the server"}
                 ]
             }
             """
@@ -193,7 +245,7 @@ public final class ServerManager: @unchecked Sendable {
     private init() {}
 
     /// Starts the server in a background task
-    public func startServer(host: String = GeisterhandServer.defaultHost, port: Int = GeisterhandServer.defaultPort) {
+    public func startServer(host: String = GeisterhandServer.defaultHost, port: Int = GeisterhandServer.defaultPort, targetApp: TargetApp? = nil) {
         lock.lock()
         defer { lock.unlock() }
 
@@ -202,7 +254,7 @@ public final class ServerManager: @unchecked Sendable {
             return
         }
 
-        let newServer = GeisterhandServer(host: host, port: port)
+        let newServer = GeisterhandServer(host: host, port: port, targetApp: targetApp)
         self.server = newServer
 
         serverTask = Task {
@@ -228,12 +280,12 @@ public final class ServerManager: @unchecked Sendable {
     }
 
     /// Restarts the server
-    public func restartServer(host: String = GeisterhandServer.defaultHost, port: Int = GeisterhandServer.defaultPort) {
+    public func restartServer(host: String = GeisterhandServer.defaultHost, port: Int = GeisterhandServer.defaultPort, targetApp: TargetApp? = nil) {
         stopServer()
 
         // Small delay to ensure clean shutdown
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-            self?.startServer(host: host, port: port)
+            self?.startServer(host: host, port: port, targetApp: targetApp)
         }
     }
 }

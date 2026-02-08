@@ -1,5 +1,6 @@
 import Foundation
 import ArgumentParser
+import AppKit
 import GeisterhandCore
 
 @main
@@ -15,7 +16,8 @@ struct Geisterhand: AsyncParsableCommand {
             Key.self,
             Scroll.self,
             Status.self,
-            Server.self
+            Server.self,
+            Run.self
         ],
         defaultSubcommand: Status.self
     )
@@ -281,5 +283,149 @@ struct Server: AsyncParsableCommand {
 
         let server = GeisterhandServer(host: host, port: port)
         try await server.start()
+    }
+}
+
+// MARK: - Run Command (on-demand mode)
+
+struct Run: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(
+        abstract: "Launch app and start server scoped to it (on-demand mode)"
+    )
+
+    @Argument(help: "Application name (e.g., 'Calculator'), bundle path ('/Applications/Safari.app'), or bundle identifier")
+    var app: String
+
+    @Option(name: .shortAndLong, help: "Host to bind to")
+    var host: String = "127.0.0.1"
+
+    @Option(name: .shortAndLong, help: "Port to listen on (0 = auto-select)")
+    var port: Int = 0
+
+    func run() async throws {
+        // Find or launch the target application
+        let runningApp = try launchOrAttach(app: app)
+        let pid = runningApp.processIdentifier
+        let appName = runningApp.localizedName ?? app
+        let bundleId = runningApp.bundleIdentifier
+
+        // Determine port
+        let serverPort: Int
+        if port == 0 {
+            serverPort = try GeisterhandServer.findAvailablePort(host: host)
+        } else {
+            serverPort = port
+        }
+
+        let targetApp = TargetApp(pid: pid, appName: appName, bundleIdentifier: bundleId)
+
+        // Print JSON to stdout for the caller
+        let info: [String: Any] = [
+            "port": serverPort,
+            "pid": Int(pid),
+            "app": appName,
+            "host": host
+        ]
+        if let jsonData = try? JSONSerialization.data(withJSONObject: info, options: []),
+           let jsonString = String(data: jsonData, encoding: .utf8) {
+            print(jsonString)
+            // Flush stdout so callers can read the JSON immediately
+            fflush(stdout)
+        }
+
+        // Monitor target app termination in the background
+        Task.detached {
+            while true {
+                try await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
+                if runningApp.isTerminated {
+                    Darwin.exit(0)
+                }
+            }
+        }
+
+        // Start the server (blocks until server stops)
+        let server = GeisterhandServer(host: host, port: serverPort, targetApp: targetApp)
+        try await server.start()
+    }
+
+    private func launchOrAttach(app: String) throws -> NSRunningApplication {
+        let workspace = NSWorkspace.shared
+
+        // First, check if already running by name
+        if let running = workspace.runningApplications.first(where: {
+            $0.localizedName?.lowercased() == app.lowercased()
+        }) {
+            return running
+        }
+
+        // Check by bundle identifier
+        if let running = workspace.runningApplications.first(where: {
+            $0.bundleIdentifier?.lowercased() == app.lowercased()
+        }) {
+            return running
+        }
+
+        // Try to launch
+        if app.hasSuffix(".app") || app.hasPrefix("/") {
+            // Path-based launch
+            let url: URL
+            if app.hasPrefix("/") {
+                url = URL(fileURLWithPath: app)
+            } else {
+                url = URL(fileURLWithPath: "/Applications/\(app)")
+            }
+
+            let config = NSWorkspace.OpenConfiguration()
+            config.activates = true
+
+            nonisolated(unsafe) var launchedApp: NSRunningApplication?
+            nonisolated(unsafe) var launchError: Error?
+            let semaphore = DispatchSemaphore(value: 0)
+
+            workspace.openApplication(at: url, configuration: config) { app, error in
+                launchedApp = app
+                launchError = error
+                semaphore.signal()
+            }
+            semaphore.wait()
+
+            if let error = launchError {
+                throw error
+            }
+            guard let app = launchedApp else {
+                throw NSError(domain: "Geisterhand", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to launch application"])
+            }
+
+            // Wait for the app to finish launching
+            for _ in 0..<50 {
+                if app.isFinishedLaunching { break }
+                Thread.sleep(forTimeInterval: 0.1)
+            }
+
+            return app
+        } else {
+            // Try launching by name via open command
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+            process.arguments = ["-a", app]
+            try process.run()
+            process.waitUntilExit()
+
+            guard process.terminationStatus == 0 else {
+                throw NSError(domain: "Geisterhand", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to launch '\(app)' via open -a"])
+            }
+
+            // Wait for app to appear
+            for _ in 0..<50 {
+                Thread.sleep(forTimeInterval: 0.1)
+                if let running = workspace.runningApplications.first(where: {
+                    $0.localizedName?.lowercased() == app.lowercased()
+                }) {
+                    return running
+                }
+            }
+
+            throw NSError(domain: "Geisterhand", code: 1, userInfo: [NSLocalizedDescriptionKey: "Application '\(app)' launched but not found in running applications"])
+        }
     }
 }

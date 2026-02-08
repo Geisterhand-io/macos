@@ -3,8 +3,11 @@ import Hummingbird
 
 /// Handler for /scroll endpoint
 public struct ScrollRoute: Sendable {
+    let targetApp: TargetApp?
 
-    public init() {}
+    public init(targetApp: TargetApp? = nil) {
+        self.targetApp = targetApp
+    }
 
     /// Handles POST /scroll request
     /// Body: { "x": number, "y": number, "delta_x": number, "delta_y": number }
@@ -31,10 +34,12 @@ public struct ScrollRoute: Sendable {
             return try errorResponse(message: "At least one of delta_x or delta_y must be non-zero", code: 400)
         }
 
+        let effectivePid = scrollRequest.pid ?? targetApp?.pid
+
         if let path = scrollRequest.path {
             // Element path mode: find element frame, scroll at its center
             return try handleElementPathScroll(path: path, deltaX: deltaX, deltaY: deltaY)
-        } else if let pid = scrollRequest.pid {
+        } else if let pid = effectivePid {
             // PID-targeted mode
             let x = scrollRequest.x ?? 0
             let y = scrollRequest.y ?? 0
