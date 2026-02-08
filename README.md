@@ -81,11 +81,19 @@ The server runs on `127.0.0.1:7676` by default.
 | GET | `/` | API info and available endpoints |
 | GET | `/status` | System info and permission status |
 | GET | `/health` | Health check |
-| GET | `/screenshot` | Capture screen (base64 PNG) |
+| GET | `/screenshot` | Capture screen or app window (`?app=Safari`) |
 | POST | `/click` | Click at coordinates |
-| POST | `/type` | Type text |
-| POST | `/key` | Press key with modifiers |
-| POST | `/scroll` | Scroll at position |
+| POST | `/click/element` | Click element by title/role/label |
+| POST | `/type` | Type text (supports background mode) |
+| POST | `/key` | Press key with modifiers (supports background mode) |
+| POST | `/scroll` | Scroll at position (supports background mode) |
+| POST | `/wait` | Wait for element to appear/disappear |
+| GET | `/accessibility/tree` | Get UI element hierarchy |
+| GET | `/accessibility/elements` | Find elements by criteria |
+| GET | `/accessibility/focused` | Get focused element |
+| POST | `/accessibility/action` | Perform action on element |
+| GET | `/menu` | Get application menu structure |
+| POST | `/menu` | Trigger menu item (supports background mode) |
 
 #### Examples
 
@@ -93,29 +101,52 @@ The server runs on `127.0.0.1:7676` by default.
 # Get status
 curl http://127.0.0.1:7676/status
 
-# Take screenshot
+# Take screenshot (full screen or specific app)
 curl http://127.0.0.1:7676/screenshot
+curl "http://127.0.0.1:7676/screenshot?app=Safari&format=base64"
 
-# Click
+# Click at coordinates
 curl -X POST http://127.0.0.1:7676/click \
   -H "Content-Type: application/json" \
   -d '{"x": 100, "y": 200, "button": "left"}'
+
+# Click element by title (with optional accessibility action for background)
+curl -X POST http://127.0.0.1:7676/click/element \
+  -H "Content-Type: application/json" \
+  -d '{"title": "OK", "use_accessibility_action": true}'
 
 # Type text
 curl -X POST http://127.0.0.1:7676/type \
   -H "Content-Type: application/json" \
   -d '{"text": "Hello World"}'
 
+# Type into background app (accessibility setValue)
+curl -X POST http://127.0.0.1:7676/type \
+  -H "Content-Type: application/json" \
+  -d '{"text": "hello@example.com", "pid": 1234, "role": "AXTextField"}'
+
 # Press Cmd+S
 curl -X POST http://127.0.0.1:7676/key \
   -H "Content-Type: application/json" \
   -d '{"key": "s", "modifiers": ["cmd"]}'
 
+# Press key targeted at background app
+curl -X POST http://127.0.0.1:7676/key \
+  -H "Content-Type: application/json" \
+  -d '{"key": "return", "pid": 1234}'
+
 # Scroll
 curl -X POST http://127.0.0.1:7676/scroll \
   -H "Content-Type: application/json" \
-  -d '{"x": 500, "y": 300, "deltaY": -100}'
+  -d '{"x": 500, "y": 300, "delta_y": -100}'
+
+# Trigger menu item (background mode)
+curl -X POST http://127.0.0.1:7676/menu \
+  -H "Content-Type: application/json" \
+  -d '{"app": "TextEdit", "path": ["Edit", "Select All"], "background": true}'
 ```
+
+See [LLM_API_GUIDE.md](LLM_API_GUIDE.md) for comprehensive API documentation including background automation patterns.
 
 ## Permissions
 

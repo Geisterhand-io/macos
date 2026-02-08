@@ -88,6 +88,50 @@ public final class KeyboardController: Sendable {
         }
     }
 
+    /// Presses a key by name with optional modifiers, targeted at a specific process
+    /// - Parameters:
+    ///   - key: The key name (e.g., "a", "return", "f1")
+    ///   - modifiers: Key modifiers to hold
+    ///   - targetPid: The PID of the target process
+    /// - Throws: KeyboardError if the key press fails
+    public func pressKey(key: String, modifiers: [KeyModifier] = [], targetPid: Int32) throws {
+        guard let keyCode = KeyCodeMap.keyCode(for: key) else {
+            throw KeyboardError.unknownKey(key)
+        }
+
+        let modifierFlags = self.modifierFlags(for: modifiers)
+
+        // Press modifiers down
+        for modifier in modifiers {
+            try pressModifierDown(modifier, targetPid: targetPid)
+        }
+
+        // Key down
+        guard let keyDown = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: true) else {
+            throw KeyboardError.eventCreationFailed
+        }
+        if !modifiers.isEmpty {
+            keyDown.flags = modifierFlags
+        }
+        keyDown.setIntegerValueField(.eventTargetUnixProcessID, value: Int64(targetPid))
+        keyDown.post(tap: .cgSessionEventTap)
+
+        // Key up
+        guard let keyUp = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: false) else {
+            throw KeyboardError.eventCreationFailed
+        }
+        if !modifiers.isEmpty {
+            keyUp.flags = modifierFlags
+        }
+        keyUp.setIntegerValueField(.eventTargetUnixProcessID, value: Int64(targetPid))
+        keyUp.post(tap: .cgSessionEventTap)
+
+        // Release modifiers
+        for modifier in modifiers.reversed() {
+            try releaseModifier(modifier, targetPid: targetPid)
+        }
+    }
+
     /// Holds a key down without releasing
     /// - Parameters:
     ///   - key: The key name
@@ -172,6 +216,27 @@ public final class KeyboardController: Sendable {
             throw KeyboardError.eventCreationFailed
         }
         event.post(tap: .cghidEventTap)
+    }
+
+    private func pressModifierDown(_ modifier: KeyModifier, targetPid: Int32) throws {
+        let keyCode = modifierKeyCode(for: modifier)
+
+        guard let event = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: true) else {
+            throw KeyboardError.eventCreationFailed
+        }
+        event.flags = singleModifierFlag(for: modifier)
+        event.setIntegerValueField(.eventTargetUnixProcessID, value: Int64(targetPid))
+        event.post(tap: .cgSessionEventTap)
+    }
+
+    private func releaseModifier(_ modifier: KeyModifier, targetPid: Int32) throws {
+        let keyCode = modifierKeyCode(for: modifier)
+
+        guard let event = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: false) else {
+            throw KeyboardError.eventCreationFailed
+        }
+        event.setIntegerValueField(.eventTargetUnixProcessID, value: Int64(targetPid))
+        event.post(tap: .cgSessionEventTap)
     }
 
     private func modifierKeyCode(for modifier: KeyModifier) -> UInt16 {

@@ -99,6 +99,11 @@ struct MenuBarView: View {
 
             Divider()
 
+            // Claude Code Integration
+            ClaudeCodeSection()
+
+            Divider()
+
             // Footer actions
             HStack {
                 Button {
@@ -154,6 +159,215 @@ struct StatusRow: View {
             Text(status)
                 .font(.caption)
                 .foregroundColor(isOK ? .secondary : .orange)
+        }
+    }
+}
+
+/// Claude Code integration section
+struct ClaudeCodeSection: View {
+    @State private var isConfigured: Bool = false
+    @State private var isChecking: Bool = true
+    @State private var isInstalling: Bool = false
+    @State private var errorMessage: String?
+    @State private var showSuccess: Bool = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Image(systemName: "terminal")
+                    .frame(width: 20)
+                    .foregroundStyle(isConfigured ? .green : .secondary)
+                Text("Claude Code")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                if isChecking {
+                    ProgressView()
+                        .scaleEffect(0.6)
+                } else if isConfigured {
+                    Text("Configured")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("Not configured")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+            }
+
+            if showSuccess {
+                Text("Restart Claude Code to use Geisterhand!")
+                    .font(.caption)
+                    .foregroundStyle(.green)
+            } else if let error = errorMessage {
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            } else if !isChecking && !isConfigured {
+                Button {
+                    installClaudeCodeIntegration()
+                } label: {
+                    if isInstalling {
+                        ProgressView()
+                            .scaleEffect(0.6)
+                        Text("Installing...")
+                    } else {
+                        Label("Enable Claude Code Integration", systemImage: "plus.circle")
+                    }
+                }
+                .buttonStyle(.bordered)
+                .disabled(isInstalling)
+            }
+        }
+        .onAppear {
+            checkClaudeCodeConfiguration()
+        }
+    }
+
+    private func checkClaudeCodeConfiguration() {
+        isChecking = true
+        DispatchQueue.global(qos: .userInitiated).async {
+            let configured = ClaudeCodeHelper.isConfigured()
+            DispatchQueue.main.async {
+                isConfigured = configured
+                isChecking = false
+            }
+        }
+    }
+
+    private func installClaudeCodeIntegration() {
+        isInstalling = true
+        errorMessage = nil
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            let result = ClaudeCodeHelper.install()
+            DispatchQueue.main.async {
+                isInstalling = false
+                switch result {
+                case .success:
+                    isConfigured = true
+                    showSuccess = true
+                case .notInstalled:
+                    errorMessage = "Claude Code CLI not found. Install it first."
+                case .failed(let message):
+                    errorMessage = message
+                }
+            }
+        }
+    }
+}
+
+/// Helper for Claude Code integration
+enum ClaudeCodeHelper {
+    enum InstallResult {
+        case success
+        case notInstalled
+        case failed(String)
+    }
+
+    /// Common installation paths for Claude Code CLI
+    private static var claudePaths: [String] {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        return [
+            "\(home)/.local/bin/claude",
+            "/usr/local/bin/claude",
+            "/opt/homebrew/bin/claude",
+            "\(home)/.npm-global/bin/claude",
+            "/usr/bin/claude"
+        ]
+    }
+
+    /// Find the claude CLI executable
+    static func findClaudePath() -> String? {
+        // Check known paths first (GUI apps don't inherit shell PATH)
+        for path in claudePaths {
+            if FileManager.default.isExecutableFile(atPath: path) {
+                return path
+            }
+        }
+
+        // Fallback: try which (works if PATH is set)
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/which")
+        process.arguments = ["claude"]
+
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = FileHandle.nullDevice
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+            if process.terminationStatus == 0 {
+                let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                let path = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+                if let path = path, !path.isEmpty {
+                    return path
+                }
+            }
+        } catch {}
+
+        return nil
+    }
+
+    /// Check if geisterhand is configured in Claude Code
+    static func isConfigured() -> Bool {
+        guard let claudePath = findClaudePath() else {
+            return false
+        }
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: claudePath)
+        process.arguments = ["mcp", "list"]
+
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = FileHandle.nullDevice
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            let output = String(data: data, encoding: .utf8) ?? ""
+            return output.contains("geisterhand")
+        } catch {
+            return false
+        }
+    }
+
+    /// Install geisterhand MCP server to Claude Code
+    static func install() -> InstallResult {
+        // Find claude CLI
+        guard let claudePath = findClaudePath() else {
+            return .notInstalled
+        }
+
+        // Run claude mcp add-json
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: claudePath)
+        process.arguments = [
+            "mcp", "add-json", "geisterhand",
+            #"{"type":"stdio","command":"npx","args":["geisterhand-mcp"]}"#,
+            "--scope", "user"
+        ]
+
+        let errorPipe = Pipe()
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = errorPipe
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+
+            if process.terminationStatus == 0 {
+                return .success
+            } else {
+                let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+                let errorOutput = String(data: errorData, encoding: .utf8) ?? "Unknown error"
+                return .failed(errorOutput.trimmingCharacters(in: .whitespacesAndNewlines))
+            }
+        } catch {
+            return .failed(error.localizedDescription)
         }
     }
 }

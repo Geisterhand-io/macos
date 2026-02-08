@@ -118,6 +118,108 @@ public actor ScreenCaptureService {
             (id: display.displayID, width: display.width, height: display.height)
         }
     }
+
+    /// Finds windows belonging to an application by name
+    /// - Parameter appName: The application name to search for (case-insensitive partial match)
+    /// - Returns: Array of window info with IDs, titles, and frames
+    public func findWindowsByApp(appName: String) async throws -> [WindowInfo] {
+        let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
+
+        let matchingWindows = content.windows.filter { window in
+            guard let owningAppName = window.owningApplication?.applicationName else { return false }
+            return owningAppName.localizedCaseInsensitiveContains(appName)
+        }
+
+        return matchingWindows.map { window in
+            WindowInfo(
+                windowId: window.windowID,
+                title: window.title,
+                appName: window.owningApplication?.applicationName,
+                bundleIdentifier: window.owningApplication?.bundleIdentifier,
+                frame: WindowFrame(
+                    x: Double(window.frame.origin.x),
+                    y: Double(window.frame.origin.y),
+                    width: Double(window.frame.width),
+                    height: Double(window.frame.height)
+                ),
+                isOnScreen: window.isOnScreen
+            )
+        }
+    }
+
+    /// Captures a window by app name (uses the first matching window)
+    /// - Parameter appName: The application name to capture
+    /// - Returns: The captured CGImage and window info
+    public func captureWindowByApp(appName: String) async throws -> (image: CGImage, windowInfo: WindowInfo) {
+        let windows = try await findWindowsByApp(appName: appName)
+
+        guard let window = windows.first(where: { $0.isOnScreen }) ?? windows.first else {
+            throw ScreenCaptureError.windowNotFoundByName(appName)
+        }
+
+        let image = try await captureWindow(windowId: window.windowId)
+        return (image, window)
+    }
+
+    /// Captures a window and returns PNG data with window info
+    public func captureWindowAsPNG(windowId: CGWindowID) async throws -> (data: Data, width: Int, height: Int) {
+        let image = try await captureWindow(windowId: windowId)
+        let data = try encoder.encodePNG(image)
+        return (data, image.width, image.height)
+    }
+
+    /// Captures a window by app name and returns PNG data
+    public func captureWindowByAppAsPNG(appName: String) async throws -> (data: Data, windowInfo: WindowInfo) {
+        let (image, windowInfo) = try await captureWindowByApp(appName: appName)
+        let data = try encoder.encodePNG(image)
+        return (data, windowInfo)
+    }
+
+    /// Captures a window and returns base64-encoded PNG
+    public func captureWindowAsBase64(windowId: CGWindowID) async throws -> (base64: String, width: Int, height: Int) {
+        let (data, width, height) = try await captureWindowAsPNG(windowId: windowId)
+        return (encoder.encodeBase64(data), width, height)
+    }
+
+    /// Captures a window by app name and returns base64-encoded PNG
+    public func captureWindowByAppAsBase64(appName: String) async throws -> (base64: String, windowInfo: WindowInfo) {
+        let (data, windowInfo) = try await captureWindowByAppAsPNG(appName: appName)
+        return (encoder.encodeBase64(data), windowInfo)
+    }
+}
+
+// MARK: - Window Info
+
+public struct WindowInfo: Codable, Sendable {
+    public let windowId: UInt32
+    public let title: String?
+    public let appName: String?
+    public let bundleIdentifier: String?
+    public let frame: WindowFrame
+    public let isOnScreen: Bool
+
+    public init(windowId: UInt32, title: String?, appName: String?, bundleIdentifier: String?, frame: WindowFrame, isOnScreen: Bool) {
+        self.windowId = windowId
+        self.title = title
+        self.appName = appName
+        self.bundleIdentifier = bundleIdentifier
+        self.frame = frame
+        self.isOnScreen = isOnScreen
+    }
+}
+
+public struct WindowFrame: Codable, Sendable {
+    public let x: Double
+    public let y: Double
+    public let width: Double
+    public let height: Double
+
+    public init(x: Double, y: Double, width: Double, height: Double) {
+        self.x = x
+        self.y = y
+        self.width = width
+        self.height = height
+    }
 }
 
 // MARK: - Error Types
@@ -125,6 +227,7 @@ public actor ScreenCaptureService {
 public enum ScreenCaptureError: Error, LocalizedError {
     case noDisplayFound
     case windowNotFound(CGWindowID)
+    case windowNotFoundByName(String)
     case captureFailed(String)
     case permissionDenied
 
@@ -134,6 +237,8 @@ public enum ScreenCaptureError: Error, LocalizedError {
             return "No display found for capture"
         case .windowNotFound(let id):
             return "Window not found: \(id)"
+        case .windowNotFoundByName(let name):
+            return "No window found for application: \(name)"
         case .captureFailed(let reason):
             return "Screen capture failed: \(reason)"
         case .permissionDenied:

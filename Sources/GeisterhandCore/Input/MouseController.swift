@@ -170,6 +170,42 @@ public final class MouseController: Sendable {
         scrollEvent.post(tap: .cghidEventTap)
     }
 
+    /// Scrolls at the specified position, targeted at a specific process
+    /// - Parameters:
+    ///   - x: X coordinate
+    ///   - y: Y coordinate
+    ///   - deltaX: Horizontal scroll amount
+    ///   - deltaY: Vertical scroll amount
+    ///   - targetPid: The PID of the target process
+    /// - Throws: MouseError if the scroll fails
+    public func scroll(x: Double, y: Double, deltaX: Double = 0, deltaY: Double = 0, targetPid: Int32) throws {
+        // Create a move event targeted at the process
+        guard let moveEvent = CGEvent(
+            mouseEventSource: nil,
+            mouseType: .mouseMoved,
+            mouseCursorPosition: CGPoint(x: x, y: y),
+            mouseButton: .left
+        ) else {
+            throw MouseError.eventCreationFailed
+        }
+        moveEvent.setIntegerValueField(.eventTargetUnixProcessID, value: Int64(targetPid))
+        moveEvent.post(tap: .cgSessionEventTap)
+
+        // Create scroll event targeted at the process
+        guard let scrollEvent = CGEvent(
+            scrollWheelEvent2Source: nil,
+            units: .pixel,
+            wheelCount: 2,
+            wheel1: Int32(deltaY),
+            wheel2: Int32(deltaX),
+            wheel3: 0
+        ) else {
+            throw MouseError.eventCreationFailed
+        }
+        scrollEvent.setIntegerValueField(.eventTargetUnixProcessID, value: Int64(targetPid))
+        scrollEvent.post(tap: .cgSessionEventTap)
+    }
+
     /// Gets the current mouse position
     public var currentPosition: CGPoint {
         NSEvent.mouseLocation
