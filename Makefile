@@ -21,17 +21,21 @@ DMG_PATH := $(BUILD_DIR)/$(DMG_NAME)
 
 # Code signing identity (set via environment or pass as argument)
 # Example: make sign DEVELOPER_ID="Developer ID Application: Your Name (TEAMID)"
-DEVELOPER_ID ?=
+DEVELOPER_ID ?= Developer ID Application: Skelpo GmbH (K6UW5YV9F7)
 
-# Notarization credentials (set via environment)
-# APPLE_ID - Your Apple ID email
-# APPLE_TEAM_ID - Your Team ID
-# NOTARIZE_PASSWORD - App-specific password or keychain reference (@keychain:AC_PASSWORD)
+# Notarization: use keychain profile (preferred) or individual credentials
+# Store credentials once with: xcrun notarytool store-credentials "GeisterhandNotarize" ...
+NOTARIZE_KEYCHAIN_PROFILE ?= GeisterhandNotarize
+
+# Fallback: individual notarization credentials (used by CI)
 APPLE_ID ?=
 APPLE_TEAM_ID ?=
 NOTARIZE_PASSWORD ?=
 
-.PHONY: all build app sign dmg notarize staple release clean help
+# New version for publish (e.g., make publish NEW_VERSION=1.1.0)
+NEW_VERSION ?=
+
+.PHONY: all build app sign dmg notarize staple release publish clean help
 
 all: build
 
@@ -45,14 +49,19 @@ help:
 	@echo "  dmg        - Create DMG installer"
 	@echo "  notarize   - Notarize with Apple (requires credentials)"
 	@echo "  staple     - Staple notarization ticket"
-	@echo "  release    - Full release pipeline"
+	@echo "  release    - Full release pipeline (build+sign+notarize)"
+	@echo "  publish    - Full publish (version bump+release+GitHub+Homebrew tap)"
 	@echo "  clean      - Remove build artifacts"
 	@echo ""
+	@echo "Quick publish:"
+	@echo "  make publish NEW_VERSION=1.1.0"
+	@echo ""
 	@echo "Environment variables:"
-	@echo "  DEVELOPER_ID      - Code signing identity"
-	@echo "  APPLE_ID          - Apple ID for notarization"
-	@echo "  APPLE_TEAM_ID     - Team ID for notarization"
-	@echo "  NOTARIZE_PASSWORD - App-specific password"
+	@echo "  DEVELOPER_ID               - Code signing identity"
+	@echo "  NOTARIZE_KEYCHAIN_PROFILE  - Keychain profile for notarization (default: GeisterhandNotarize)"
+	@echo "  APPLE_ID                   - Apple ID for notarization (CI fallback)"
+	@echo "  APPLE_TEAM_ID              - Team ID for notarization (CI fallback)"
+	@echo "  NOTARIZE_PASSWORD          - App-specific password (CI fallback)"
 	@echo ""
 	@echo "Current version: $(VERSION)"
 
@@ -124,10 +133,16 @@ dmg: sign
 	codesign --force --sign "$(DEVELOPER_ID)" "$(DMG_PATH)"
 	@echo "DMG created at $(DMG_PATH)"
 
-# Notarize with Apple
+# Notarize with Apple (keychain profile preferred, falls back to individual credentials)
 notarize: dmg
+	@echo "Submitting for notarization..."
+ifdef NOTARIZE_KEYCHAIN_PROFILE
+	xcrun notarytool submit "$(DMG_PATH)" \
+		--keychain-profile "$(NOTARIZE_KEYCHAIN_PROFILE)" \
+		--wait
+else
 ifndef APPLE_ID
-	$(error APPLE_ID is not set)
+	$(error APPLE_ID is not set and NOTARIZE_KEYCHAIN_PROFILE is not set)
 endif
 ifndef APPLE_TEAM_ID
 	$(error APPLE_TEAM_ID is not set)
@@ -135,12 +150,12 @@ endif
 ifndef NOTARIZE_PASSWORD
 	$(error NOTARIZE_PASSWORD is not set. Use app-specific password or @keychain:AC_PASSWORD)
 endif
-	@echo "Submitting for notarization..."
 	xcrun notarytool submit "$(DMG_PATH)" \
 		--apple-id "$(APPLE_ID)" \
 		--team-id "$(APPLE_TEAM_ID)" \
 		--password "$(NOTARIZE_PASSWORD)" \
 		--wait
+endif
 	@echo "Notarization complete"
 
 # Staple the notarization ticket
@@ -162,6 +177,14 @@ release: notarize staple
 	@echo "1. Test the DMG on a fresh Mac"
 	@echo "2. Upload to GitHub Releases"
 	@echo "3. Update Homebrew cask formula"
+
+# Full publish: version bump → build → sign → notarize → GitHub release → update Homebrew tap
+# Usage: make publish NEW_VERSION=1.1.0
+publish:
+ifndef NEW_VERSION
+	$(error NEW_VERSION is not set. Usage: make publish NEW_VERSION=1.1.0)
+endif
+	./scripts/publish.sh $(NEW_VERSION)
 
 # Build unsigned DMG (for testing)
 dmg-unsigned: app
