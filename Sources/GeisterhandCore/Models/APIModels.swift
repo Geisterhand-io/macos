@@ -164,8 +164,10 @@ public struct TypeRequest: Codable, Sendable {
     public let title: String?
     /// Element title substring (case-insensitive)
     public let titleContains: String?
+    /// Typing mode: "replace" (default, uses AX setValue) or "keys" (character-by-character CGEvent key presses)
+    public let mode: String?
 
-    public init(text: String, delayMs: Int? = nil, pid: Int32? = nil, path: ElementPath? = nil, role: String? = nil, title: String? = nil, titleContains: String? = nil) {
+    public init(text: String, delayMs: Int? = nil, pid: Int32? = nil, path: ElementPath? = nil, role: String? = nil, title: String? = nil, titleContains: String? = nil, mode: String? = nil) {
         self.text = text
         self.delayMs = delayMs
         self.pid = pid
@@ -173,6 +175,7 @@ public struct TypeRequest: Codable, Sendable {
         self.role = role
         self.title = title
         self.titleContains = titleContains
+        self.mode = mode
     }
 }
 

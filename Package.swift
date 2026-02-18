@@ -37,7 +37,10 @@ let package = Package(
         .target(name: "CAXKeyboardEvent"),
         .testTarget(
             name: "GeisterhandTests",
-            dependencies: ["GeisterhandCore"]
+            dependencies: [
+                "GeisterhandCore",
+                .product(name: "HummingbirdTesting", package: "hummingbird")
+            ]
         )
     ]
 )

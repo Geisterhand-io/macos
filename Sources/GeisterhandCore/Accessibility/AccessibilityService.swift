@@ -22,8 +22,9 @@ public final class AccessibilityService {
     /// - Parameters:
     ///   - pid: Process ID (uses frontmost app if nil)
     ///   - maxDepth: Maximum tree depth (default: 5)
+    ///   - rootPath: Optional path to a subtree root (e.g., [0, 1, 2]). When provided, the tree starts from this element.
     /// - Returns: GetTreeResponse with the UI tree
-    public func getTree(pid: Int32?, maxDepth: Int?) -> GetTreeResponse {
+    public func getTree(pid: Int32?, maxDepth: Int?, rootPath: [Int]? = nil) -> GetTreeResponse {
         let effectiveMaxDepth = maxDepth ?? Self.defaultMaxDepth
 
         // Get the app element
@@ -32,8 +33,22 @@ public final class AccessibilityService {
             return GetTreeResponse(success: false, error: error ?? "Failed to get application element")
         }
 
+        // Navigate to subtree root if specified
+        let startElement: AXUIElement
+        let startPath: [Int]
+        if let rootPath = rootPath, !rootPath.isEmpty {
+            guard let element = navigateToElement(from: appElement, path: rootPath) else {
+                return GetTreeResponse(success: false, error: "Element not found at rootPath \(rootPath)")
+            }
+            startElement = element
+            startPath = rootPath
+        } else {
+            startElement = appElement
+            startPath = []
+        }
+
         // Build the tree
-        let tree = buildElementInfo(element: appElement, pid: appInfo.processIdentifier, path: [], depth: 0, maxDepth: effectiveMaxDepth)
+        let tree = buildElementInfo(element: startElement, pid: appInfo.processIdentifier, path: startPath, depth: 0, maxDepth: effectiveMaxDepth)
 
         return GetTreeResponse(success: true, app: appInfo, tree: tree)
     }
@@ -43,8 +58,9 @@ public final class AccessibilityService {
     ///   - pid: Process ID (uses frontmost app if nil)
     ///   - maxDepth: Maximum tree depth (default: 5)
     ///   - includeActions: Whether to include actions in output (default: true)
+    ///   - rootPath: Optional path to a subtree root (e.g., [0, 1, 2]). When provided, the list starts from this element.
     /// - Returns: GetCompactTreeResponse with flattened element list
-    public func getCompactTree(pid: Int32?, maxDepth: Int?, includeActions: Bool = true) -> GetCompactTreeResponse {
+    public func getCompactTree(pid: Int32?, maxDepth: Int?, includeActions: Bool = true, rootPath: [Int]? = nil) -> GetCompactTreeResponse {
         let effectiveMaxDepth = maxDepth ?? Self.defaultMaxDepth
 
         // Get the app element
@@ -53,12 +69,26 @@ public final class AccessibilityService {
             return GetCompactTreeResponse(success: false, error: error ?? "Failed to get application element")
         }
 
+        // Navigate to subtree root if specified
+        let startElement: AXUIElement
+        let startPath: [Int]
+        if let rootPath = rootPath, !rootPath.isEmpty {
+            guard let element = navigateToElement(from: appElement, path: rootPath) else {
+                return GetCompactTreeResponse(success: false, error: "Element not found at rootPath \(rootPath)")
+            }
+            startElement = element
+            startPath = rootPath
+        } else {
+            startElement = appElement
+            startPath = []
+        }
+
         // Flatten the tree
         var elements: [CompactElementInfo] = []
         flattenTree(
-            element: appElement,
+            element: startElement,
             pid: appInfo.processIdentifier,
-            path: [],
+            path: startPath,
             depth: 0,
             maxDepth: effectiveMaxDepth,
             includeActions: includeActions,
@@ -262,6 +292,26 @@ public final class AccessibilityService {
         }
     }
 
+    /// Get a single element by path
+    /// - Parameters:
+    ///   - pid: Process ID
+    ///   - path: Child indices from app root
+    ///   - childDepth: How many levels of children to include (default: 0 = element only)
+    /// - Returns: GetElementResponse with the element info
+    public func getElement(pid: Int32, path: [Int], childDepth: Int = 0) -> GetElementResponse {
+        let (appElement, appInfo, error) = getAppElement(pid: pid)
+        guard let appElement = appElement, let appInfo = appInfo else {
+            return GetElementResponse(success: false, error: error ?? "Failed to get application element")
+        }
+
+        guard let element = navigateToElement(from: appElement, path: path) else {
+            return GetElementResponse(success: false, app: appInfo, error: "Element not found at path \(path)")
+        }
+
+        let info = buildElementInfo(element: element, pid: appInfo.processIdentifier, path: path, depth: 0, maxDepth: childDepth)
+        return GetElementResponse(success: true, app: appInfo, element: info)
+    }
+
     /// Get the frame of an element at a given path
     /// - Parameter path: Path to the element
     /// - Returns: ElementFrame if found, nil otherwise
@@ -289,16 +339,23 @@ public final class AccessibilityService {
             effectivePid = frontApp.processIdentifier
         }
 
-        // Verify the process exists
-        guard let app = NSRunningApplication(processIdentifier: effectivePid) else {
-            return (nil, nil, "Application with PID \(effectivePid) not found")
+        // Try NSRunningApplication first (works for .app bundles)
+        let appInfo: AppInfo
+        if let app = NSRunningApplication(processIdentifier: effectivePid) {
+            appInfo = AppInfo(
+                name: app.localizedName ?? "Unknown",
+                bundleIdentifier: app.bundleIdentifier,
+                processIdentifier: effectivePid
+            )
+        } else {
+            // Fallback for non-bundle processes: get name via sysctl
+            let name = Self.processName(for: effectivePid) ?? "Unknown"
+            appInfo = AppInfo(
+                name: name,
+                bundleIdentifier: nil,
+                processIdentifier: effectivePid
+            )
         }
-
-        let appInfo = AppInfo(
-            name: app.localizedName ?? "Unknown",
-            bundleIdentifier: app.bundleIdentifier,
-            processIdentifier: effectivePid
-        )
 
         let appElement = AXUIElementCreateApplication(effectivePid)
 
@@ -316,6 +373,20 @@ public final class AccessibilityService {
         }
 
         return (appElement, appInfo, nil)
+    }
+
+    /// Get process name via sysctl for non-bundle processes
+    private static func processName(for pid: Int32) -> String? {
+        var info = kinfo_proc()
+        var size = MemoryLayout<kinfo_proc>.size
+        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, pid]
+        let result = sysctl(&mib, UInt32(mib.count), &info, &size, nil, 0)
+        guard result == 0, size > 0 else { return nil }
+        return withUnsafePointer(to: &info.kp_proc.p_comm) { ptr in
+            ptr.withMemoryRebound(to: CChar.self, capacity: Int(MAXCOMLEN)) { cStr in
+                String(cString: cStr)
+            }
+        }
     }
 
     /// Build UIElementInfo from an AXUIElement

@@ -278,10 +278,13 @@ struct Server: AsyncParsableCommand {
     @Option(name: .shortAndLong, help: "Port to listen on")
     var port: Int = 7676
 
+    @Flag(name: .long, help: "Enable debug logging")
+    var verbose: Bool = false
+
     func run() async throws {
         print("Starting Geisterhand server on \(host):\(port)...")
 
-        let server = GeisterhandServer(host: host, port: port)
+        let server = GeisterhandServer(host: host, port: port, verbose: verbose)
         try await server.start()
     }
 }
@@ -293,8 +296,11 @@ struct Run: AsyncParsableCommand {
         abstract: "Launch app and start server scoped to it (on-demand mode)"
     )
 
-    @Argument(help: "Application name (e.g., 'Calculator'), bundle path ('/Applications/Safari.app'), or bundle identifier")
+    @Argument(help: "Application name (e.g., 'Calculator'), bundle path ('/Applications/Safari.app'), bundle identifier, or executable path (e.g., '/usr/bin/python3')")
     var app: String
+
+    @Argument(parsing: .remaining, help: "Arguments to pass to the target binary (only for raw executables)")
+    var args: [String] = []
 
     @Option(name: .shortAndLong, help: "Host to bind to")
     var host: String = "127.0.0.1"
@@ -302,12 +308,31 @@ struct Run: AsyncParsableCommand {
     @Option(name: .shortAndLong, help: "Port to listen on (0 = auto-select)")
     var port: Int = 0
 
+    @Flag(name: .long, help: "Enable debug logging")
+    var verbose: Bool = false
+
+    enum LaunchedTarget {
+        case app(NSRunningApplication)
+        case process(Foundation.Process, pid: Int32, name: String)
+    }
+
     func run() async throws {
-        // Find or launch the target application
-        let runningApp = try launchOrAttach(app: app)
-        let pid = runningApp.processIdentifier
-        let appName = runningApp.localizedName ?? app
-        let bundleId = runningApp.bundleIdentifier
+        let target = try launchOrAttach(app: app)
+
+        let pid: Int32
+        let appName: String
+        let bundleId: String?
+
+        switch target {
+        case .app(let runningApp):
+            pid = runningApp.processIdentifier
+            appName = runningApp.localizedName ?? app
+            bundleId = runningApp.bundleIdentifier
+        case .process(_, let processId, let name):
+            pid = processId
+            appName = name
+            bundleId = nil
+        }
 
         // Determine port
         let serverPort: Int
@@ -333,36 +358,75 @@ struct Run: AsyncParsableCommand {
             fflush(stdout)
         }
 
-        // Monitor target app termination in the background
-        Task.detached {
-            while true {
-                try await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
-                if runningApp.isTerminated {
-                    Darwin.exit(0)
+        // Monitor target app/process termination in the background
+        switch target {
+        case .app(let runningApp):
+            Task.detached {
+                while true {
+                    try await Task.sleep(nanoseconds: 1_000_000_000)
+                    if runningApp.isTerminated {
+                        Darwin.exit(0)
+                    }
+                }
+            }
+        case .process(let process, _, _):
+            Task.detached {
+                while true {
+                    try await Task.sleep(nanoseconds: 1_000_000_000)
+                    if !process.isRunning {
+                        Darwin.exit(0)
+                    }
                 }
             }
         }
 
         // Start the server (blocks until server stops)
-        let server = GeisterhandServer(host: host, port: serverPort, targetApp: targetApp)
+        let server = GeisterhandServer(host: host, port: serverPort, targetApp: targetApp, verbose: verbose)
         try await server.start()
     }
 
-    private func launchOrAttach(app: String) throws -> NSRunningApplication {
+    /// Check if the given path is a raw binary (executable file, not a .app bundle)
+    private func isRawBinary(_ path: String) -> Bool {
+        guard path.hasPrefix("/") && !path.hasSuffix(".app") else { return false }
+        let fm = FileManager.default
+        var isDir: ObjCBool = false
+        guard fm.fileExists(atPath: path, isDirectory: &isDir) else { return false }
+        guard !isDir.boolValue else { return false }
+        return fm.isExecutableFile(atPath: path)
+    }
+
+    private func launchOrAttach(app: String) throws -> LaunchedTarget {
+        // Check if this is a raw binary (executable path, not a .app bundle)
+        if isRawBinary(app) {
+            let process = Foundation.Process()
+            process.executableURL = URL(fileURLWithPath: app)
+            if !args.isEmpty {
+                process.arguments = args
+            }
+
+            try process.run()
+
+            // Give the process a moment to start
+            Thread.sleep(forTimeInterval: 0.3)
+
+            let name = URL(fileURLWithPath: app).lastPathComponent
+            return .process(process, pid: process.processIdentifier, name: name)
+        }
+
         let workspace = NSWorkspace.shared
 
         // First, check if already running by name
         if let running = workspace.runningApplications.first(where: {
             $0.localizedName?.lowercased() == app.lowercased()
         }) {
-            return running
+            return .app(running)
         }
 
         // Check by bundle identifier
         if let running = workspace.runningApplications.first(where: {
             $0.bundleIdentifier?.lowercased() == app.lowercased()
         }) {
-            return running
+            return .app(running)
         }
 
         // Try to launch
@@ -402,7 +466,7 @@ struct Run: AsyncParsableCommand {
                 Thread.sleep(forTimeInterval: 0.1)
             }
 
-            return app
+            return .app(app)
         } else {
             // Try launching by name via open command
             let process = Process()
@@ -421,7 +485,7 @@ struct Run: AsyncParsableCommand {
                 if let running = workspace.runningApplications.first(where: {
                     $0.localizedName?.lowercased() == app.lowercased()
                 }) {
-                    return running
+                    return .app(running)
                 }
             }
 

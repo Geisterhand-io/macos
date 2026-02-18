@@ -17,6 +17,7 @@ public struct AccessibilityRoute: Sendable {
     /// - maxDepth: Maximum tree depth (optional, default: 5)
     /// - format: Output format - "tree" (default) or "compact" (flattened list)
     /// - includeActions: Include actions in compact format (default: true)
+    /// - rootPath: Comma-separated child indices to scope to a subtree (e.g., "0,1,2")
     @MainActor
     public func handleTree(_ request: Request, context: some RequestContext) async throws -> Response {
         let service = AccessibilityService.shared
@@ -26,10 +27,13 @@ public struct AccessibilityRoute: Sendable {
         let maxDepth = request.uri.queryParameters.get("maxDepth").flatMap { Int($0) }
         let format = request.uri.queryParameters.get("format") ?? "tree"
         let includeActions = request.uri.queryParameters.get("includeActions").flatMap { $0.lowercased() != "false" } ?? true
+        let rootPath = request.uri.queryParameters.get("rootPath").map { param in
+            param.split(separator: ",").compactMap { Int($0) }
+        }
 
         if format.lowercased() == "compact" {
             // Return flattened compact format
-            let response = service.getCompactTree(pid: pid, maxDepth: maxDepth, includeActions: includeActions)
+            let response = service.getCompactTree(pid: pid, maxDepth: maxDepth, includeActions: includeActions, rootPath: rootPath)
 
             if response.success {
                 return try encodeJSON(response)
@@ -38,13 +42,44 @@ public struct AccessibilityRoute: Sendable {
             }
         } else {
             // Return nested tree format (default)
-            let response = service.getTree(pid: pid, maxDepth: maxDepth)
+            let response = service.getTree(pid: pid, maxDepth: maxDepth, rootPath: rootPath)
 
             if response.success {
                 return try encodeJSON(response)
             } else {
                 return try encodeJSON(response, status: .badRequest)
             }
+        }
+    }
+
+    // MARK: - GET /accessibility/element
+
+    /// Handles GET /accessibility/element request
+    /// Query params:
+    /// - pid: Process ID (required)
+    /// - path: Comma-separated child indices (e.g., "0,1,2")
+    /// - childDepth: How many levels of children to include (default: 0)
+    @MainActor
+    public func handleElement(_ request: Request, context: some RequestContext) async throws -> Response {
+        let service = AccessibilityService.shared
+
+        guard let pidStr = request.uri.queryParameters.get("pid"), let pid = Int32(pidStr) else {
+            return try errorResponse(message: "Missing or invalid 'pid' parameter", code: 400)
+        }
+
+        guard let pathStr = request.uri.queryParameters.get("path") else {
+            return try errorResponse(message: "Missing 'path' parameter (comma-separated indices, e.g., '0,1,2')", code: 400)
+        }
+
+        let path = pathStr.split(separator: ",").compactMap { Int($0) }
+        let childDepth = request.uri.queryParameters.get("childDepth").flatMap { Int($0) } ?? 0
+
+        let response = service.getElement(pid: pid, path: path, childDepth: childDepth)
+
+        if response.success {
+            return try encodeJSON(response)
+        } else {
+            return try encodeJSON(response, status: .badRequest)
         }
     }
 

@@ -31,10 +31,33 @@ public struct TypeRoute: Sendable {
             return try errorResponse(message: "Text cannot be empty", code: 400)
         }
 
+        // Validate mode
+        let mode = typeRequest.mode ?? "replace"
+        guard mode == "replace" || mode == "keys" else {
+            return try errorResponse(message: "Invalid mode '\(mode)'. Must be 'replace' or 'keys'", code: 400)
+        }
+
         // Check if this is an element-targeted (background mode) request
         let hasElementTarget = typeRequest.path != nil || typeRequest.role != nil || typeRequest.title != nil || typeRequest.titleContains != nil
 
-        if let path = typeRequest.path {
+        if mode == "keys" {
+            // Character-by-character CGEvent key presses
+            let effectivePid: Int32?
+            if let pid = typeRequest.pid {
+                effectivePid = pid
+            } else if let path = typeRequest.path {
+                effectivePid = path.pid
+            } else {
+                effectivePid = targetApp?.pid
+            }
+
+            // If element targeting params are present, focus the element first
+            if hasElementTarget {
+                try focusTargetElement(typeRequest: typeRequest, effectivePid: effectivePid)
+            }
+
+            return try handleCGEventType(typeRequest: typeRequest, targetPid: effectivePid)
+        } else if let path = typeRequest.path {
             // Direct path mode: use AX setValue
             return try handleSetValue(text: typeRequest.text, path: path)
         } else if hasElementTarget {
@@ -43,6 +66,27 @@ public struct TypeRoute: Sendable {
         } else {
             // Standard CGEvent keyboard typing
             return try handleCGEventType(typeRequest: typeRequest, targetPid: targetApp?.pid)
+        }
+    }
+
+    /// Focus an element before typing via CGEvents (for "keys" mode with element targeting)
+    @MainActor
+    private func focusTargetElement(typeRequest: TypeRequest, effectivePid: Int32?) throws {
+        let service = AccessibilityService.shared
+
+        if let path = typeRequest.path {
+            _ = service.performAction(path: path, action: .focus, value: nil)
+        } else {
+            let query = ElementQuery(
+                role: typeRequest.role,
+                titleContains: typeRequest.titleContains,
+                title: typeRequest.title,
+                maxResults: 1
+            )
+            let findResult = service.findElements(pid: effectivePid, query: query)
+            if let elements = findResult.elements, let element = elements.first {
+                _ = service.performAction(path: element.path, action: .focus, value: nil)
+            }
         }
     }
 

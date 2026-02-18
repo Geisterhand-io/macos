@@ -256,6 +256,21 @@ public struct GetFocusedResponse: Codable, Sendable {
     }
 }
 
+/// Response containing a single element
+public struct GetElementResponse: Codable, Sendable {
+    public let success: Bool
+    public let app: AppInfo?
+    public let element: UIElementInfo?
+    public let error: String?
+
+    public init(success: Bool, app: AppInfo? = nil, element: UIElementInfo? = nil, error: String? = nil) {
+        self.success = success
+        self.app = app
+        self.element = element
+        self.error = error
+    }
+}
+
 // MARK: - Compact Tree
 
 /// Compact element info for flattened tree output

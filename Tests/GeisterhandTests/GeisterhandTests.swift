@@ -673,7 +673,7 @@ struct RouteHandlerTests {
 
     @Test("StatusRoute has correct version")
     func statusRouteVersion() {
-        #expect(StatusRoute.version == "1.0.0")
+        #expect(StatusRoute.version == "1.2.0")
     }
 
     @Test("StatusRoute can be instantiated")
