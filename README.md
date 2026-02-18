@@ -1,169 +1,154 @@
 # Geisterhand
 
-A macOS screen automation tool that provides an HTTP API and CLI for controlling mouse, keyboard, and capturing screenshots.
+macOS screen automation tool with HTTP API and CLI. Automate any Mac app — click buttons, type text, navigate menus, and capture screenshots.
 
-## Requirements
-
-- macOS 14.0+
-- Swift 6.0+
-- Accessibility permission (for keyboard/mouse control)
-- Screen Recording permission (for screenshots)
-
-## Installation
-
-### Build from source
+## Install
 
 ```bash
-git clone https://github.com/Geisterhand-io/macos.git
-cd macos
+brew install --cask geisterhand-io/tap/geisterhand
+```
+
+This installs the menu bar app and the `geisterhand` CLI. Or [download the DMG](https://github.com/Geisterhand-io/macos/releases/latest) directly.
+
+<details>
+<summary>Other install methods</summary>
+
+**CLI only (no menu bar app):**
+```bash
+brew install geisterhand-io/tap/geisterhand
+```
+
+**Build from source:**
+```bash
+git clone https://github.com/Geisterhand-io/macos.git && cd macos
 swift build -c release
+# Binaries: .build/release/geisterhand (CLI), .build/release/GeisterhandApp (menu bar app)
 ```
+</details>
 
-The binaries will be in `.build/release/`:
-- `geisterhand` - CLI tool
-- `GeisterhandApp` - Menu bar application
+## Quick Start
 
-## Usage
+**1. Grant permissions** — Launch the app once and grant Accessibility and Screen Recording in System Settings > Privacy & Security.
 
-### Menu Bar App
-
-Run the menu bar app for persistent background operation:
+**2. Run:**
 
 ```bash
-swift run GeisterhandApp
+geisterhand run Calculator
+# {"port":49152,"pid":12345,"app":"Calculator","host":"127.0.0.1"}
 ```
 
-The icon color indicates status:
-- Green: All permissions granted, server running
-- Yellow: Missing some permissions
-- Red: Server not running
-
-### CLI
+**3. Automate:**
 
 ```bash
-# Check status and permissions
-geisterhand status
+# See what's on screen
+curl http://127.0.0.1:49152/accessibility/tree?format=compact
+
+# Click a button
+curl -X POST http://127.0.0.1:49152/click/element \
+  -H "Content-Type: application/json" \
+  -d '{"title": "7", "role": "AXButton"}'
 
 # Take a screenshot
-geisterhand screenshot -o screenshot.png
-geisterhand screenshot --base64
-
-# Click at coordinates
-geisterhand click 100 200
-geisterhand click 100 200 --button right --count 2
-geisterhand click 100 200 --cmd --shift
-
-# Type text
-geisterhand type "Hello World"
-geisterhand type "Slow typing" --delay 50
-
-# Press keys with modifiers
-geisterhand key return
-geisterhand key s --cmd          # Cmd+S
-geisterhand key a --cmd --shift  # Cmd+Shift+A
-
-# Scroll
-geisterhand scroll 500 300 --delta -100  # Scroll up
-geisterhand scroll 500 300 --delta-x 50  # Scroll right
-
-# Run HTTP server standalone
-geisterhand server --host 127.0.0.1 --port 7676
+curl http://127.0.0.1:49152/screenshot --output screen.png
 ```
 
-### HTTP API
+## `geisterhand run`
 
-The server runs on `127.0.0.1:7676` by default.
+The primary way to use Geisterhand. Launches (or attaches to) an app and starts an HTTP server scoped to it:
 
-#### Endpoints
+```bash
+geisterhand run Safari                    # by app name
+geisterhand run /Applications/Xcode.app   # by path
+geisterhand run com.apple.TextEdit        # by bundle identifier
+geisterhand run Calculator --port 7676    # pin a specific port
+```
+
+The server auto-selects a free port, scopes all requests to the target app's PID, and exits when the app quits. Connection details are printed as a JSON line on stdout.
+
+## HTTP API
+
+All endpoints accept and return JSON with `snake_case` field names.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/` | API info and available endpoints |
-| GET | `/status` | System info and permission status |
-| GET | `/health` | Health check |
-| GET | `/screenshot` | Capture screen or app window (`?app=Safari`) |
+| GET | `/status` | System info, permissions, frontmost app |
+| GET | `/screenshot` | Capture screen or app window (`?app=Name`) |
 | POST | `/click` | Click at coordinates |
 | POST | `/click/element` | Click element by title/role/label |
-| POST | `/type` | Type text (supports background mode) |
-| POST | `/key` | Press key with modifiers (supports background mode) |
-| POST | `/scroll` | Scroll at position (supports background mode) |
-| POST | `/wait` | Wait for element to appear/disappear |
-| GET | `/accessibility/tree` | Get UI element hierarchy |
-| GET | `/accessibility/elements` | Find elements by criteria |
+| POST | `/type` | Type text |
+| POST | `/key` | Press key with modifiers |
+| POST | `/scroll` | Scroll at position |
+| POST | `/wait` | Wait for element to appear/disappear/become enabled |
+| GET | `/accessibility/tree` | Get UI element hierarchy (`?format=compact`) |
+| GET | `/accessibility/elements` | Find elements by role/title/label |
 | GET | `/accessibility/focused` | Get focused element |
-| POST | `/accessibility/action` | Perform action on element |
+| POST | `/accessibility/action` | Perform action on element (press, setValue, focus, ...) |
 | GET | `/menu` | Get application menu structure |
-| POST | `/menu` | Trigger menu item (supports background mode) |
+| POST | `/menu` | Trigger menu item |
 
-#### Examples
+All input endpoints (`/type`, `/key`, `/scroll`, `/click/element`, `/menu`) support **background mode** — pass `pid`, `path`, or `use_accessibility_action` to automate apps without bringing them to the foreground.
+
+## CLI
 
 ```bash
-# Get status
-curl http://127.0.0.1:7676/status
-
-# Take screenshot (full screen or specific app)
-curl http://127.0.0.1:7676/screenshot
-curl "http://127.0.0.1:7676/screenshot?app=Safari&format=base64"
-
-# Click at coordinates
-curl -X POST http://127.0.0.1:7676/click \
-  -H "Content-Type: application/json" \
-  -d '{"x": 100, "y": 200, "button": "left"}'
-
-# Click element by title (with optional accessibility action for background)
-curl -X POST http://127.0.0.1:7676/click/element \
-  -H "Content-Type: application/json" \
-  -d '{"title": "OK", "use_accessibility_action": true}'
-
-# Type text
-curl -X POST http://127.0.0.1:7676/type \
-  -H "Content-Type: application/json" \
-  -d '{"text": "Hello World"}'
-
-# Type into background app (accessibility setValue)
-curl -X POST http://127.0.0.1:7676/type \
-  -H "Content-Type: application/json" \
-  -d '{"text": "hello@example.com", "pid": 1234, "role": "AXTextField"}'
-
-# Press Cmd+S
-curl -X POST http://127.0.0.1:7676/key \
-  -H "Content-Type: application/json" \
-  -d '{"key": "s", "modifiers": ["cmd"]}'
-
-# Press key targeted at background app
-curl -X POST http://127.0.0.1:7676/key \
-  -H "Content-Type: application/json" \
-  -d '{"key": "return", "pid": 1234}'
-
-# Scroll
-curl -X POST http://127.0.0.1:7676/scroll \
-  -H "Content-Type: application/json" \
-  -d '{"x": 500, "y": 300, "delta_y": -100}'
-
-# Trigger menu item (background mode)
-curl -X POST http://127.0.0.1:7676/menu \
-  -H "Content-Type: application/json" \
-  -d '{"app": "TextEdit", "path": ["Edit", "Select All"], "background": true}'
+geisterhand status                          # check permissions
+geisterhand screenshot -o screenshot.png    # capture screen
+geisterhand click 100 200                   # click at coordinates
+geisterhand click 100 200 --cmd --shift     # click with modifiers
+geisterhand type "Hello World"              # type text
+geisterhand key s --cmd                     # press Cmd+S
+geisterhand scroll 500 300 --delta -100     # scroll up
+geisterhand server --port 7676              # start HTTP server
 ```
 
-See [LLM_API_GUIDE.md](LLM_API_GUIDE.md) for comprehensive API documentation including background automation patterns.
+## Documentation
 
-## Permissions
+- **[Testing Guide](TESTING_WITH_GEISTERHAND.md)** — Full reference for automating apps with Geisterhand. Includes a `CLAUDE.md` snippet you can drop into any project, 10 recipes (forms, menus, dialogs, screenshots, ...), best practices, and troubleshooting. Also serves as context for LLMs.
+- **[API Guide](LLM_API_GUIDE.md)** — Complete endpoint reference with curl examples, optimized for LLM consumption.
 
-Geisterhand requires two macOS permissions:
+## Using with Claude
 
-1. **Accessibility** - For keyboard and mouse control
-   - System Settings > Privacy & Security > Accessibility
+Add Geisterhand as an MCP server for Claude Code or Claude Desktop:
 
-2. **Screen Recording** - For screenshots
-   - System Settings > Privacy & Security > Screen Recording
+```bash
+# Claude Code
+claude mcp add-json geisterhand \
+  '{"type":"stdio","command":"npx","args":["geisterhand-mcp"]}' \
+  --scope user
+```
 
-The app will prompt for these permissions on first use, or you can grant them manually.
+<details>
+<summary>Claude Desktop</summary>
 
-## Author
+Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
-Skelpo GmbH
+```json
+{
+  "mcpServers": {
+    "geisterhand": {
+      "command": "npx",
+      "args": ["geisterhand-mcp"]
+    }
+  }
+}
+```
+</details>
+
+Or use `geisterhand run` directly — add the [Testing Guide](TESTING_WITH_GEISTERHAND.md) snippet to your project's `CLAUDE.md` and Claude will use the HTTP API via curl.
+
+## Menu Bar App
+
+The menu bar app runs the server persistently and manages permissions:
+- Green icon: all permissions granted, server running
+- Yellow icon: missing some permissions
+- Red icon: server not running
+
+## Requirements
+
+- macOS 14.0 (Sonoma) or later
+- Accessibility permission (keyboard/mouse control)
+- Screen Recording permission (screenshots)
 
 ## License
 
-MIT
+MIT — Skelpo GmbH
