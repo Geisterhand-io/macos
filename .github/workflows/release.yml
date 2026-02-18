@@ -1,0 +1,136 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  APP_NAME: Geisterhand
+
+jobs:
+  build-and-release:
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Get version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Build release
+        run: swift build -c release
+
+      - name: Create app bundle
+        run: make app
+
+      - name: Import signing certificate
+        env:
+          CERTIFICATE_BASE64: ${{ secrets.DEVELOPER_CERTIFICATE_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.DEVELOPER_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          # Create a temporary keychain
+          KEYCHAIN_PATH=$RUNNER_TEMP/signing.keychain-db
+          security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+
+          # Import the certificate
+          echo "$CERTIFICATE_BASE64" | base64 --decode > $RUNNER_TEMP/certificate.p12
+          security import $RUNNER_TEMP/certificate.p12 -P "$CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
+          security list-keychain -d user -s $KEYCHAIN_PATH
+
+          # Allow codesign to access the keychain
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+
+      - name: Sign app
+        env:
+          DEVELOPER_ID: ${{ secrets.DEVELOPER_ID }}
+        run: make sign DEVELOPER_ID="$DEVELOPER_ID"
+
+      - name: Create DMG
+        env:
+          DEVELOPER_ID: ${{ secrets.DEVELOPER_ID }}
+        run: make dmg DEVELOPER_ID="$DEVELOPER_ID"
+
+      - name: Notarize
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          NOTARIZE_PASSWORD: ${{ secrets.NOTARIZE_PASSWORD }}
+        run: |
+          xcrun notarytool submit ".build/release/${{ env.APP_NAME }}-${{ steps.version.outputs.VERSION }}.dmg" \
+            --apple-id "$APPLE_ID" \
+            --team-id "$APPLE_TEAM_ID" \
+            --password "$NOTARIZE_PASSWORD" \
+            --wait
+
+      - name: Staple notarization ticket
+        run: xcrun stapler staple ".build/release/${{ env.APP_NAME }}-${{ steps.version.outputs.VERSION }}.dmg"
+
+      - name: Verify notarization
+        run: |
+          spctl --assess --verbose=4 --type install ".build/release/${{ env.APP_NAME }}-${{ steps.version.outputs.VERSION }}.dmg"
+
+      - name: Calculate SHA256
+        id: sha
+        run: |
+          SHA=$(shasum -a 256 ".build/release/${{ env.APP_NAME }}-${{ steps.version.outputs.VERSION }}.dmg" | awk '{print $1}')
+          echo "SHA256=$SHA" >> $GITHUB_OUTPUT
+          echo "SHA256: $SHA"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: Geisterhand v${{ steps.version.outputs.VERSION }}
+          draft: false
+          prerelease: false
+          files: |
+            .build/release/${{ env.APP_NAME }}-${{ steps.version.outputs.VERSION }}.dmg
+          body: |
+            ## Geisterhand v${{ steps.version.outputs.VERSION }}
+
+            macOS screen automation tool with HTTP API.
+
+            ### Installation
+
+            **Homebrew (recommended):**
+            ```bash
+            brew install --cask geisterhand-io/tap/geisterhand
+            ```
+
+            **Manual download:**
+            Download `${{ env.APP_NAME }}-${{ steps.version.outputs.VERSION }}.dmg` below and drag to Applications.
+
+            ### SHA256
+            ```
+            ${{ steps.sha.outputs.SHA256 }}
+            ```
+
+            ### Requirements
+            - macOS 14.0 (Sonoma) or later
+            - Accessibility permission (for keyboard/mouse control)
+            - Screen Recording permission (for screenshots)
+
+            ### What's New
+            See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for details.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Output cask formula update
+        run: |
+          echo "========================================"
+          echo "Update homebrew-geisterhand cask formula:"
+          echo "========================================"
+          echo ""
+          echo "  version \"${{ steps.version.outputs.VERSION }}\""
+          echo "  sha256 \"${{ steps.sha.outputs.SHA256 }}\""
+          echo ""
