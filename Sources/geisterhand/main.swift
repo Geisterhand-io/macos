@@ -376,7 +376,7 @@ struct Run: AsyncParsableCommand {
             }
 
             let config = NSWorkspace.OpenConfiguration()
-            config.activates = true
+            config.activates = false
 
             nonisolated(unsafe) var launchedApp: NSRunningApplication?
             nonisolated(unsafe) var launchError: Error?
@@ -407,7 +407,7 @@ struct Run: AsyncParsableCommand {
             // Try launching by name via open command
             let process = Process()
             process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-            process.arguments = ["-a", app]
+            process.arguments = ["-g", "-a", app]
             try process.run()
             process.waitUntilExit()
 
