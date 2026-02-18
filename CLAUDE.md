@@ -82,3 +82,40 @@ All endpoints run on `127.0.0.1:7676`:
 - Tests use Swift Testing framework (`@Test`, `#expect`)
 - JSON uses snake_case encoding/decoding strategy
 - **Background mode**: Input routes (`/type`, `/key`, `/scroll`) accept optional `pid`, `path`, and element query params. When present, they use accessibility APIs or PID-targeted CGEvents instead of global events, enabling automation of background apps without bringing them to the foreground.
+
+## Releasing a New Version
+
+One command publishes a new version end-to-end (version bump, build, sign, notarize, GitHub release, Homebrew tap update):
+
+```bash
+make publish NEW_VERSION=1.2.0
+```
+
+This runs `scripts/publish.sh` which does:
+1. Bumps `CFBundleVersion` and `CFBundleShortVersionString` in `Sources/GeisterhandApp/Info.plist`
+2. Commits the version bump, creates a git tag `v<version>`, pushes both
+3. Runs `make clean && make release` (build → sign → DMG → notarize → staple)
+4. Creates a GitHub release with the DMG and auto-generated notes
+5. Clones `Geisterhand-io/homebrew-tap`, updates SHA256 hashes in both `Casks/geisterhand.rb` and `Formula/geisterhand.rb`, pushes
+
+### Prerequisites
+- **Code signing identity**: `Developer ID Application: Skelpo GmbH (K6UW5YV9F7)` (hardcoded in Makefile)
+- **Notarization credentials**: Stored in macOS Keychain as profile `GeisterhandNotarize`. If missing, re-create with:
+  ```bash
+  xcrun notarytool store-credentials "GeisterhandNotarize" \
+    --apple-id "info@skelpo.com" --team-id "K6UW5YV9F7" --password "<app-specific-password>"
+  ```
+- **GitHub CLI** (`gh`): Must be authenticated for release creation and tap push
+
+### Key files
+- `Makefile` — build/sign/notarize pipeline and `publish` target
+- `scripts/publish.sh` — full publish orchestration script
+- `Geisterhand.entitlements` — hardened runtime entitlements for notarization
+- `homebrew/geisterhand.rb` — cask formula template (reference copy)
+- `homebrew/geisterhand-formula.rb` — source formula template (reference copy)
+- Homebrew tap repo: `Geisterhand-io/homebrew-tap` (Casks/ and Formula/)
+
+### Distribution
+- **Homebrew cask** (recommended): `brew install --cask geisterhand-io/tap/geisterhand`
+- **Homebrew source formula** (CLI only): `brew install geisterhand-io/tap/geisterhand`
+- **GitHub releases**: https://github.com/Geisterhand-io/macos/releases
