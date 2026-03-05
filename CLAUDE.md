@@ -53,11 +53,34 @@ SwiftUI menu bar application that:
 - Uses `StatusMonitor` for periodic status updates
 
 ### geisterhand (CLI)
-ArgumentParser-based CLI with subcommands: `screenshot`, `click`, `type`, `key`, `scroll`, `status`, `server`
+ArgumentParser-based CLI with subcommands: `run`, `screenshot`, `click`, `type`, `key`, `scroll`, `status`, `server`
+
+## `geisterhand run` (Primary Usage)
+
+The `run` subcommand is the main way to use Geisterhand. It launches (or attaches to) an app **in the background** (without stealing focus) and starts an HTTP server scoped to that app's PID:
+
+```bash
+geisterhand run Calculator                     # by app name
+geisterhand run /Applications/Safari.app       # by bundle path
+geisterhand run com.apple.TextEdit             # by bundle identifier
+geisterhand run /usr/bin/python3 script.py     # raw executable with args
+geisterhand run Calculator --port 7676         # pin a specific port
+```
+
+**How it works:**
+1. Launches the app in the background (`NSWorkspace.OpenConfiguration.activates = false` / `open -g`) — it does NOT steal focus or come to the foreground
+2. If the app is already running, attaches to it instead of launching a new instance
+3. Starts an HTTP server on an auto-selected free port (or `--port` to pin one)
+4. Prints a single JSON line to stdout: `{"port":49152,"pid":12345,"app":"Calculator","host":"127.0.0.1"}`
+5. All routes automatically scope to the target app's PID — no need to pass `pid` or `app` in each request
+6. Screenshots work via ScreenCaptureKit even when the app is behind other windows
+7. Auto-exits when the target app/process terminates
+
+**Implementation:** `Sources/geisterhand/main.swift` — `Run` struct (line ~292). Uses `NSWorkspace.shared.openApplication()` for `.app` bundles, `Foundation.Process` for raw executables, and `open -g -a` as a fallback for app names. Each route handler receives a `TargetApp` containing `pid`, `appName`, and `bundleIdentifier`, and falls back to it when no explicit targeting params are provided.
 
 ## HTTP API Endpoints
 
-All endpoints run on `127.0.0.1:7676`:
+All endpoints run on the host/port from `geisterhand run` output (or `127.0.0.1:7676` with `geisterhand server`):
 - `GET /status` - System info and permission status
 - `GET /screenshot` - Capture screen or specific window (supports `?app=Name` for background windows)
 - `POST /click` - Click at coordinates

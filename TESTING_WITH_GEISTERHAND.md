@@ -20,14 +20,24 @@ swift build -c release && cp .build/release/geisterhand /usr/local/bin/
 
 ## How It Works
 
-`geisterhand run` launches (or attaches to) an app and starts an HTTP server scoped to it. It prints a JSON line with the connection details, then blocks until the app quits:
+`geisterhand run` launches (or attaches to) an app **in the background** and starts an HTTP server scoped to it. It prints a JSON line with the connection details, then blocks until the app quits:
 
 ```bash
-geisterhand run TextEdit
-# {"app":"TextEdit","host":"127.0.0.1","pid":12345,"port":49152}
+geisterhand run TextEdit                       # by app name
+geisterhand run /Applications/Safari.app       # by bundle path
+geisterhand run com.apple.TextEdit             # by bundle identifier
+geisterhand run /usr/bin/python3 app.py        # raw executable with args
+geisterhand run TextEdit --port 7676           # pin a specific port
+# Output: {"app":"TextEdit","host":"127.0.0.1","pid":12345,"port":49152}
 ```
 
-The server auto-selects a free port (use `--port` to pin one). All API requests are scoped to the target app's PID. When the target app terminates, the server exits automatically.
+**Key behaviors:**
+- The app launches **without stealing focus** — it stays in the background so other processes are not interrupted
+- If the app is already running, Geisterhand attaches to it (no duplicate launch)
+- The server auto-selects a free port (use `--port` to pin one)
+- **All API requests are automatically scoped to the target app's PID** — no need to pass `pid` or `app` in each request
+- Screenshots work even when the app window is behind other windows (uses ScreenCaptureKit)
+- When the target app terminates, the server exits automatically
 
 ---
 
@@ -44,12 +54,13 @@ All requests/responses use `snake_case` JSON.
 ### Starting the App Under Test
 
 ```bash
-# Launch [YourApp] and start Geisterhand server scoped to it
+# Launch [YourApp] in the background and start Geisterhand server scoped to it
 geisterhand run [YourApp] &
 # Reads the JSON line to get PORT and PID
+# The app launches WITHOUT stealing focus — it stays in the background
 ```
 
-You can pass an app name (`Calculator`), bundle path (`/Applications/Safari.app`), or bundle identifier. If the app is already running, Geisterhand attaches to it.
+You can pass an app name (`Calculator`), bundle path (`/Applications/Safari.app`), bundle identifier, or raw executable path with args. If the app is already running, Geisterhand attaches to it. All API requests are automatically scoped to the app's PID.
 
 ### Testing Workflow
 
@@ -67,6 +78,7 @@ You can pass an app name (`Calculator`), bundle path (`/Applications/Safari.app`
 - Use `?format=compact` on `/accessibility/tree` for readable output
 - Use `/screenshot` to capture the app's window (scoped automatically)
 - Use background mode (`pid`, `path`, `use_accessibility_action`) when you don't want to steal focus
+- `geisterhand run` launches apps in the background — they don't steal focus, and screenshots work even when the window is behind other apps
 ````
 
 ---
@@ -413,7 +425,7 @@ curl -X POST http://127.0.0.1:$PORT/key \
 ## Best Practices
 
 ### 1. Always Start with `geisterhand run`
-Use `geisterhand run YourApp &` to launch the app and server together. Parse the JSON output to get `port` and `pid`. Then verify with `GET /status`.
+Use `geisterhand run YourApp &` to launch the app and server together. The app launches in the background without stealing focus — you can continue using your machine normally while tests run. Parse the JSON output to get `port` and `pid`. Then verify with `GET /status`.
 
 ### 2. Use `/wait` Instead of `sleep`
 `sleep` is fragile. Use `/wait` to synchronize with actual UI state:

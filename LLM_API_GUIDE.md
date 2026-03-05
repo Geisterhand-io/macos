@@ -1,6 +1,45 @@
 # Geisterhand API Guide for LLMs
 
-Geisterhand is a macOS automation tool that provides HTTP endpoints to control mouse, keyboard, and capture screenshots. The server runs on `http://127.0.0.1:7676`.
+Geisterhand is a macOS automation tool that provides HTTP endpoints to control mouse, keyboard, and capture screenshots.
+
+## Starting Geisterhand — `geisterhand run`
+
+**`geisterhand run` is the primary way to use Geisterhand.** It launches (or attaches to) an app in the background and starts an HTTP server scoped to it:
+
+```bash
+geisterhand run Calculator                     # by app name
+geisterhand run /Applications/Safari.app       # by bundle path
+geisterhand run com.apple.TextEdit             # by bundle identifier
+geisterhand run /usr/bin/python3 script.py     # raw executable with args
+geisterhand run Calculator --port 7676         # pin a specific port
+```
+
+Output (single JSON line on stdout):
+```json
+{"port":49152,"pid":12345,"app":"Calculator","host":"127.0.0.1"}
+```
+
+**Key behaviors:**
+- The app launches **in the background** — it does NOT steal focus or come to the foreground
+- If the app is already running, Geisterhand attaches to it (no duplicate launch)
+- The server auto-selects a free port (use `--port` to pin one)
+- **All API requests are automatically scoped to the target app's PID** — you don't need to pass `pid` or `app` in each request
+- Screenshots work even when the app window is behind other windows (uses ScreenCaptureKit)
+- The server auto-exits when the target app/process terminates
+
+**Typical usage pattern:**
+```bash
+# 1. Start geisterhand with your app (runs in background)
+geisterhand run MyApp &
+# Parse the JSON output to get PORT
+
+# 2. Use the API
+curl http://127.0.0.1:$PORT/accessibility/tree?format=compact
+curl -X POST http://127.0.0.1:$PORT/click/element -d '{"title": "OK"}'
+curl http://127.0.0.1:$PORT/screenshot --output screen.png
+```
+
+> **Note:** You can also run a standalone server with `geisterhand server --port 7676` (not scoped to any app — you must pass `pid`/`app` in each request). The examples below use port 7676 for brevity, but when using `geisterhand run`, replace with the port from the JSON output.
 
 ## Quick Reference
 
@@ -921,39 +960,40 @@ curl "http://127.0.0.1:7676/screenshot?app=Safari&format=base64"
 
 ## Tips for LLMs
 
-1. **Always add delays** between actions (0.3-1 second) to let the UI respond
-2. **Check /status first** to verify the server is running and has permissions
-3. **Use /screenshot** to see the current screen state before/after actions
-4. **Coordinates**: (0,0) is top-left corner of the main display
-5. **Text input**: Use `/type` for text, `/key` for shortcuts and special keys
-6. **All JSON uses snake_case** for field names
+1. **Use `geisterhand run` to launch apps** — it opens apps in the background without stealing focus, auto-selects a port, scopes all requests to the app's PID, and exits when the app quits. You don't need to pass `pid` or `app` in each request.
+2. **Always add delays** between actions (0.3-1 second) to let the UI respond
+3. **Check /status first** to verify the server is running and has permissions
+4. **Use /screenshot** to see the current screen state before/after actions
+5. **Coordinates**: (0,0) is top-left corner of the main display
+6. **Text input**: Use `/type` for text, `/key` for shortcuts and special keys
+7. **All JSON uses snake_case** for field names
 
 ### Accessibility API Tips
 
-7. **Prefer accessibility API over coordinates** - It's more reliable because:
+8. **Prefer accessibility API over coordinates** - It's more reliable because:
    - Elements are found by semantic properties (role, label, title)
    - Actions are performed directly on elements, not at coordinates that might shift
    - No need to analyze screenshots to find click targets
 
-8. **Workflow for clicking a button**:
+9. **Workflow for clicking a button**:
    - First: `GET /accessibility/elements?role=AXButton&titleContains=...` to find it
    - Get the `path` from the response
    - Then: `POST /accessibility/action` with `{"path": ..., "action": "press"}`
 
-9. **Use frame coordinates as fallback** - Each element includes a `frame` with `x`, `y`, `width`, `height`. Calculate center: `(x + width/2, y + height/2)` for coordinate-based clicking if action fails.
+10. **Use frame coordinates as fallback** - Each element includes a `frame` with `x`, `y`, `width`, `height`. Calculate center: `(x + width/2, y + height/2)` for coordinate-based clicking if action fails.
 
-10. **Element paths are stable** within a session but may change if the UI structure changes (windows open/close, views update). Re-query if an action fails.
+11. **Element paths are stable** within a session but may change if the UI structure changes (windows open/close, views update). Re-query if an action fails.
 
-11. **Common patterns**:
+12. **Common patterns**:
     - Find buttons: `role=AXButton`
     - Find text inputs: `role=AXTextField` or `role=AXTextArea`
     - Find by visible text: `titleContains=...` or `labelContains=...`
     - Set input value: `action=setValue` with `value=...`
     - Click/press: `action=press`
 
-12. **Get app PID** from `/status` response (`frontmost_app.process_identifier`) or use `pgrep AppName`
+13. **Get app PID** from `/status` response (`frontmost_app.process_identifier`) or use `pgrep AppName`
 
-13. **Use `/wait` instead of sleep** - Instead of `sleep 1`, use `/wait` to intelligently wait for UI changes:
+14. **Use `/wait` instead of sleep** - Instead of `sleep 1`, use `/wait` to intelligently wait for UI changes:
     ```bash
     # Bad: arbitrary delay
     sleep 2
@@ -964,7 +1004,7 @@ curl "http://127.0.0.1:7676/screenshot?app=Safari&format=base64"
       -d '{"title": "Done", "timeout_ms": 5000}'
     ```
 
-14. **Use `/click/element` for semantic clicking** - Instead of finding coordinates manually:
+15. **Use `/click/element` for semantic clicking** - Instead of finding coordinates manually:
     ```bash
     # Bad: multiple steps to click a button
     curl "http://127.0.0.1:7676/accessibility/elements?title=OK"
@@ -975,18 +1015,18 @@ curl "http://127.0.0.1:7676/screenshot?app=Safari&format=base64"
       -d '{"title": "OK", "role": "AXButton"}'
     ```
 
-15. **Use app-specific screenshots** - Capture just the target app window for clearer context:
+16. **Use app-specific screenshots** - Capture just the target app window for clearer context:
     ```bash
     curl "http://127.0.0.1:7676/screenshot?app=Safari&format=base64"
     ```
 
-16. **Use `/menu` for menu actions** - More reliable than keyboard shortcuts:
+17. **Use `/menu` for menu actions** - More reliable than keyboard shortcuts:
     ```bash
     curl -X POST http://127.0.0.1:7676/menu \
       -d '{"app": "Safari", "path": ["File", "New Window"]}'
     ```
 
-17. **Use background mode for non-intrusive automation** - Add `pid` or `path` to `/type`, `/key`, `/scroll` to interact with apps without bringing them to front:
+18. **Use background mode for non-intrusive automation** - Add `pid` or `path` to `/type`, `/key`, `/scroll` to interact with apps without bringing them to front:
     ```bash
     # Type into a background app's text field
     curl -X POST http://127.0.0.1:7676/type \

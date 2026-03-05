@@ -54,16 +54,19 @@ curl http://127.0.0.1:49152/screenshot --output screen.png
 
 ## `geisterhand run`
 
-The primary way to use Geisterhand. Launches (or attaches to) an app and starts an HTTP server scoped to it:
+The primary way to use Geisterhand. Launches (or attaches to) an app **in the background** and starts an HTTP server scoped to it:
 
 ```bash
-geisterhand run Safari                    # by app name
-geisterhand run /Applications/Xcode.app   # by path
-geisterhand run com.apple.TextEdit        # by bundle identifier
-geisterhand run Calculator --port 7676    # pin a specific port
+geisterhand run Safari                          # by app name
+geisterhand run /Applications/Xcode.app         # by path
+geisterhand run com.apple.TextEdit              # by bundle identifier
+geisterhand run /usr/bin/python3 app.py arg1    # raw executable with args
+geisterhand run Calculator --port 7676          # pin a specific port
 ```
 
-The server auto-selects a free port, scopes all requests to the target app's PID, and exits when the app quits. Connection details are printed as a JSON line on stdout.
+The app launches **without stealing focus** — it stays behind other windows so you can test it without interrupting your workflow. Screenshots work even when the window is behind other apps (via ScreenCaptureKit). If the app is already running, Geisterhand attaches to it instead of launching a new instance.
+
+The server auto-selects a free port, scopes all requests to the target app's PID (no need to pass `pid`/`app` in each request), and exits when the app quits. Connection details are printed as a JSON line on stdout.
 
 ## HTTP API
 
