@@ -25,8 +25,8 @@ public struct WaitRoute: Sendable {
         }
 
         // Validate that at least one search criteria is provided
-        if waitRequest.title == nil && waitRequest.titleContains == nil && waitRequest.role == nil && waitRequest.label == nil {
-            return try errorResponse(message: "At least one search criteria required (title, titleContains, role, or label)", code: 400)
+        if waitRequest.title == nil && waitRequest.titleContains == nil && waitRequest.role == nil && waitRequest.label == nil && waitRequest.placeholderContains == nil {
+            return try errorResponse(message: "At least one search criteria required (title, titleContains, role, label, or placeholderContains)", code: 400)
         }
 
         // Set defaults
@@ -48,6 +48,7 @@ public struct WaitRoute: Sendable {
             titleContains: waitRequest.titleContains,
             title: waitRequest.title,
             labelContains: waitRequest.label,
+            placeholderContains: waitRequest.placeholderContains,
             maxResults: 1
         )
 

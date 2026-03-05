@@ -38,7 +38,7 @@ public struct TypeRoute: Sendable {
         }
 
         // Check if this is an element-targeted (background mode) request
-        let hasElementTarget = typeRequest.path != nil || typeRequest.role != nil || typeRequest.title != nil || typeRequest.titleContains != nil
+        let hasElementTarget = typeRequest.path != nil || typeRequest.role != nil || typeRequest.title != nil || typeRequest.titleContains != nil || typeRequest.placeholderContains != nil
 
         if mode == "keys" && targetApp == nil {
             // Character-by-character CGEvent key presses (standalone server only).
@@ -94,6 +94,7 @@ public struct TypeRoute: Sendable {
                 role: typeRequest.role,
                 titleContains: typeRequest.titleContains,
                 title: typeRequest.title,
+                placeholderContains: typeRequest.placeholderContains,
                 maxResults: 1
             )
             let findResult = service.findElements(pid: effectivePid, query: query)
@@ -134,6 +135,7 @@ public struct TypeRoute: Sendable {
             role: typeRequest.role,
             titleContains: typeRequest.titleContains,
             title: typeRequest.title,
+            placeholderContains: typeRequest.placeholderContains,
             maxResults: 1
         )
 

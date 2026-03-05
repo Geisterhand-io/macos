@@ -31,8 +31,8 @@ public struct ClickRoute: Sendable {
         }
 
         // Validate that at least one search criteria is provided
-        if elementRequest.title == nil && elementRequest.titleContains == nil && elementRequest.role == nil && elementRequest.label == nil {
-            return try errorResponse(message: "At least one search criteria required (title, titleContains, role, or label)", code: 400)
+        if elementRequest.title == nil && elementRequest.titleContains == nil && elementRequest.role == nil && elementRequest.label == nil && elementRequest.placeholderContains == nil {
+            return try errorResponse(message: "At least one search criteria required (title, titleContains, role, label, or placeholderContains)", code: 400)
         }
 
         // Build query
@@ -41,6 +41,7 @@ public struct ClickRoute: Sendable {
             titleContains: elementRequest.titleContains,
             title: elementRequest.title,
             labelContains: elementRequest.label,
+            placeholderContains: elementRequest.placeholderContains,
             maxResults: 1
         )
 

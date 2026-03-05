@@ -164,10 +164,12 @@ public struct TypeRequest: Codable, Sendable {
     public let title: String?
     /// Element title substring (case-insensitive)
     public let titleContains: String?
+    /// Element placeholder value substring (case-insensitive, e.g., "Email")
+    public let placeholderContains: String?
     /// Typing mode: "replace" (default, uses AX setValue) or "keys" (character-by-character CGEvent key presses)
     public let mode: String?
 
-    public init(text: String, delayMs: Int? = nil, pid: Int32? = nil, path: ElementPath? = nil, role: String? = nil, title: String? = nil, titleContains: String? = nil, mode: String? = nil) {
+    public init(text: String, delayMs: Int? = nil, pid: Int32? = nil, path: ElementPath? = nil, role: String? = nil, title: String? = nil, titleContains: String? = nil, placeholderContains: String? = nil, mode: String? = nil) {
         self.text = text
         self.delayMs = delayMs
         self.pid = pid
@@ -175,6 +177,7 @@ public struct TypeRequest: Codable, Sendable {
         self.role = role
         self.title = title
         self.titleContains = titleContains
+        self.placeholderContains = placeholderContains
         self.mode = mode
     }
 }
@@ -288,6 +291,8 @@ public struct ElementClickRequest: Codable, Sendable {
     public let pid: Int32?
     /// Element label to match (accessibility description)
     public let label: String?
+    /// Element placeholder value substring to match (case-insensitive, e.g., "Email")
+    public let placeholderContains: String?
     /// Whether to use AX press action instead of mouse click (default: false)
     public let useAccessibilityAction: Bool?
     /// Mouse button to use if not using accessibility action (default: left)
@@ -299,6 +304,7 @@ public struct ElementClickRequest: Codable, Sendable {
         role: String? = nil,
         pid: Int32? = nil,
         label: String? = nil,
+        placeholderContains: String? = nil,
         useAccessibilityAction: Bool? = nil,
         button: MouseButton? = nil
     ) {
@@ -307,6 +313,7 @@ public struct ElementClickRequest: Codable, Sendable {
         self.role = role
         self.pid = pid
         self.label = label
+        self.placeholderContains = placeholderContains
         self.useAccessibilityAction = useAccessibilityAction
         self.button = button
     }
@@ -380,6 +387,8 @@ public struct WaitRequest: Codable, Sendable {
     public let pid: Int32?
     /// Element label to match (accessibility description)
     public let label: String?
+    /// Element placeholder value substring to match (case-insensitive, e.g., "Email")
+    public let placeholderContains: String?
     /// Timeout in milliseconds (default: 5000)
     public let timeoutMs: Int?
     /// Poll interval in milliseconds (default: 100)
@@ -393,6 +402,7 @@ public struct WaitRequest: Codable, Sendable {
         role: String? = nil,
         pid: Int32? = nil,
         label: String? = nil,
+        placeholderContains: String? = nil,
         timeoutMs: Int? = nil,
         pollIntervalMs: Int? = nil,
         condition: WaitCondition? = nil
@@ -402,6 +412,7 @@ public struct WaitRequest: Codable, Sendable {
         self.role = role
         self.pid = pid
         self.label = label
+        self.placeholderContains = placeholderContains
         self.timeoutMs = timeoutMs
         self.pollIntervalMs = pollIntervalMs
         self.condition = condition

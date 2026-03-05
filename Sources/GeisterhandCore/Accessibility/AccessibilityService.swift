@@ -121,16 +121,17 @@ public final class AccessibilityService {
         let role = getStringAttribute(element, kAXRoleAttribute) ?? "Unknown"
         let title = getStringAttribute(element, kAXTitleAttribute)
         let label = getStringAttribute(element, kAXDescriptionAttribute)
+        let placeholderValue = getStringAttribute(element, kAXPlaceholderValueAttribute)
         let frame = getFrame(element)
         let actions: [String]? = includeActions ? getActions(element) : nil
 
-        // Only include elements that have some identifying info (title, label, or meaningful role)
+        // Only include elements that have some identifying info (title, label, placeholder, or meaningful role)
         let meaningfulRoles = ["AXButton", "AXTextField", "AXTextArea", "AXLink", "AXCheckBox", "AXRadioButton",
                                "AXPopUpButton", "AXComboBox", "AXSlider", "AXTabGroup", "AXTable", "AXList",
                                "AXMenuItem", "AXMenu", "AXMenuBar", "AXMenuButton", "AXToolbar", "AXSheet",
                                "AXDialog", "AXWindow", "AXStaticText", "AXImage", "AXScrollArea"]
 
-        let hasText = (title != nil && !title!.isEmpty) || (label != nil && !label!.isEmpty)
+        let hasText = (title != nil && !title!.isEmpty) || (label != nil && !label!.isEmpty) || (placeholderValue != nil && !placeholderValue!.isEmpty)
         let isMeaningfulRole = meaningfulRoles.contains(role)
 
         // Include if it has text OR is a meaningful interactive role
@@ -140,6 +141,7 @@ public final class AccessibilityService {
                 role: role,
                 title: title,
                 label: label,
+                placeholderValue: placeholderValue,
                 frame: frame,
                 actions: actions?.isEmpty == true ? nil : actions,
                 depth: depth
@@ -467,6 +469,7 @@ public final class AccessibilityService {
         let title = getStringAttribute(element, kAXTitleAttribute)
         let label = getStringAttribute(element, kAXDescriptionAttribute)
         let value = getStringAttribute(element, kAXValueAttribute)
+        let placeholderValue = getStringAttribute(element, kAXPlaceholderValueAttribute)
         let description = getStringAttribute(element, kAXHelpAttribute)
 
         // Get frame
@@ -491,6 +494,7 @@ public final class AccessibilityService {
             title: title,
             label: label,
             value: value,
+            placeholderValue: placeholderValue,
             elementDescription: description,
             frame: frame,
             isEnabled: isEnabled,
@@ -536,6 +540,7 @@ public final class AccessibilityService {
         let title = getStringAttribute(element, kAXTitleAttribute)
         let label = getStringAttribute(element, kAXDescriptionAttribute)
         let value = getStringAttribute(element, kAXValueAttribute)
+        let placeholderValue = getStringAttribute(element, kAXPlaceholderValueAttribute)
 
         // Check if element matches query
         var matches = true
@@ -558,6 +563,10 @@ public final class AccessibilityService {
 
         if let valueContains = query.valueContains, !valueContains.isEmpty {
             matches = matches && (value?.localizedCaseInsensitiveContains(valueContains) ?? false)
+        }
+
+        if let placeholderContains = query.placeholderContains, !placeholderContains.isEmpty {
+            matches = matches && (placeholderValue?.localizedCaseInsensitiveContains(placeholderContains) ?? false)
         }
 
         // Add to results if matches
@@ -587,7 +596,8 @@ public final class AccessibilityService {
                query.title != nil ||
                query.titleContains != nil ||
                query.labelContains != nil ||
-               query.valueContains != nil
+               query.valueContains != nil ||
+               query.placeholderContains != nil
     }
 
     /// Navigate to an element using path indices

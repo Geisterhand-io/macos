@@ -86,7 +86,7 @@ public struct AccessibilityRoute: Sendable {
     // MARK: - GET /accessibility/elements
 
     /// Handles GET /accessibility/elements request
-    /// Query params: pid, role, title, titleContains, labelContains, valueContains, maxResults
+    /// Query params: pid, role, title, titleContains, labelContains, valueContains, placeholderContains, maxResults
     @MainActor
     public func handleFindElements(_ request: Request, context: some RequestContext) async throws -> Response {
         let service = AccessibilityService.shared
@@ -98,6 +98,7 @@ public struct AccessibilityRoute: Sendable {
         let titleContains = request.uri.queryParameters.get("titleContains")
         let labelContains = request.uri.queryParameters.get("labelContains")
         let valueContains = request.uri.queryParameters.get("valueContains")
+        let placeholderContains = request.uri.queryParameters.get("placeholderContains")
         let maxResults = request.uri.queryParameters.get("maxResults").flatMap { Int($0) }
 
         // Build query
@@ -107,12 +108,13 @@ public struct AccessibilityRoute: Sendable {
             title: title,
             labelContains: labelContains,
             valueContains: valueContains,
+            placeholderContains: placeholderContains,
             maxResults: maxResults
         )
 
         // Validate that at least one search criteria is provided
-        if role == nil && title == nil && titleContains == nil && labelContains == nil && valueContains == nil {
-            return try errorResponse(message: "At least one search criteria required (role, title, titleContains, labelContains, or valueContains)", code: 400)
+        if role == nil && title == nil && titleContains == nil && labelContains == nil && valueContains == nil && placeholderContains == nil {
+            return try errorResponse(message: "At least one search criteria required (role, title, titleContains, labelContains, valueContains, or placeholderContains)", code: 400)
         }
 
         // Find elements

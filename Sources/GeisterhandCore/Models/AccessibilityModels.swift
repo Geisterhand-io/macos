@@ -51,6 +51,8 @@ public struct UIElementInfo: Codable, Sendable {
     public let label: String?
     /// The element's value
     public let value: String?
+    /// The element's placeholder value (e.g., "Email", "Password")
+    public let placeholderValue: String?
     /// The element's description
     public let elementDescription: String?
     /// Frame in screen coordinates
@@ -70,6 +72,7 @@ public struct UIElementInfo: Codable, Sendable {
         title: String? = nil,
         label: String? = nil,
         value: String? = nil,
+        placeholderValue: String? = nil,
         elementDescription: String? = nil,
         frame: ElementFrame? = nil,
         isEnabled: Bool = true,
@@ -82,6 +85,7 @@ public struct UIElementInfo: Codable, Sendable {
         self.title = title
         self.label = label
         self.value = value
+        self.placeholderValue = placeholderValue
         self.elementDescription = elementDescription
         self.frame = frame
         self.isEnabled = isEnabled
@@ -105,6 +109,8 @@ public struct ElementQuery: Codable, Sendable {
     public let labelContains: String?
     /// Filter by value containing this string (case-insensitive)
     public let valueContains: String?
+    /// Filter by placeholder value containing this string (case-insensitive)
+    public let placeholderContains: String?
     /// Maximum number of results to return (default: 50)
     public let maxResults: Int?
 
@@ -114,6 +120,7 @@ public struct ElementQuery: Codable, Sendable {
         title: String? = nil,
         labelContains: String? = nil,
         valueContains: String? = nil,
+        placeholderContains: String? = nil,
         maxResults: Int? = nil
     ) {
         self.role = role
@@ -121,6 +128,7 @@ public struct ElementQuery: Codable, Sendable {
         self.title = title
         self.labelContains = labelContains
         self.valueContains = valueContains
+        self.placeholderContains = placeholderContains
         self.maxResults = maxResults
     }
 }
@@ -283,6 +291,8 @@ public struct CompactElementInfo: Codable, Sendable {
     public let title: String?
     /// Label (if present)
     public let label: String?
+    /// Placeholder value (if present, e.g., "Email", "Password")
+    public let placeholderValue: String?
     /// Frame in screen coordinates
     public let frame: ElementFrame?
     /// Available actions
@@ -295,6 +305,7 @@ public struct CompactElementInfo: Codable, Sendable {
         role: String,
         title: String? = nil,
         label: String? = nil,
+        placeholderValue: String? = nil,
         frame: ElementFrame? = nil,
         actions: [String]? = nil,
         depth: Int = 0
@@ -303,6 +314,7 @@ public struct CompactElementInfo: Codable, Sendable {
         self.role = role
         self.title = title
         self.label = label
+        self.placeholderValue = placeholderValue
         self.frame = frame
         self.actions = actions
         self.depth = depth
