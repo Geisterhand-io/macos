@@ -312,6 +312,30 @@ public final class AccessibilityService {
         return GetElementResponse(success: true, app: appInfo, element: info)
     }
 
+    /// Find and press the element at the given screen-absolute position
+    /// - Parameters:
+    ///   - pid: Process ID of the target application
+    ///   - x: Screen-absolute X coordinate
+    ///   - y: Screen-absolute Y coordinate
+    /// - Returns: ActionResponse indicating success/failure
+    public func pressElementAtPosition(pid: Int32, x: Double, y: Double) -> ActionResponse {
+        let appElement = AXUIElementCreateApplication(pid)
+
+        var elementRef: AXUIElement?
+        let result = AXUIElementCopyElementAtPosition(appElement, Float(x), Float(y), &elementRef)
+
+        guard result == .success, let element = elementRef else {
+            return ActionResponse(success: false, action: "press", error: "No element found at position (\(x), \(y))")
+        }
+
+        let actionResult = AXUIElementPerformAction(element, kAXPressAction as CFString)
+        if actionResult == .success {
+            return ActionResponse(success: true, action: "press")
+        } else {
+            return ActionResponse(success: false, action: "press", error: "AX press action failed (error: \(actionResult.rawValue))")
+        }
+    }
+
     /// Get the frame of an element at a given path
     /// - Parameter path: Path to the element
     /// - Returns: ElementFrame if found, nil otherwise

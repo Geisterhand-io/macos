@@ -36,22 +36,35 @@ public struct ScrollRoute: Sendable {
 
         let effectivePid = scrollRequest.pid ?? targetApp?.pid
 
+        // In geisterhand-run mode, coordinates are window-relative (from screenshots).
+        // Translate to screen-absolute by adding the window frame origin.
+        var windowOffsetX: Double = 0
+        var windowOffsetY: Double = 0
+        if let targetApp = targetApp {
+            if let frame = try? await ScreenCaptureService.shared.getMainWindowFrame(appName: targetApp.appName) {
+                windowOffsetX = frame.x
+                windowOffsetY = frame.y
+            }
+        }
+
         if let path = scrollRequest.path {
-            // Element path mode: find element frame, scroll at its center
+            // Element path mode: frame coords are already screen-absolute
             return try handleElementPathScroll(path: path, deltaX: deltaX, deltaY: deltaY)
         } else if let pid = effectivePid {
             // PID-targeted mode
-            let x = scrollRequest.x ?? 0
-            let y = scrollRequest.y ?? 0
+            let x = (scrollRequest.x ?? 0) + windowOffsetX
+            let y = (scrollRequest.y ?? 0) + windowOffsetY
             guard x >= 0 && y >= 0 else {
                 return try errorResponse(message: "Invalid coordinates: x and y must be non-negative", code: 400)
             }
             return try handlePIDTargetedScroll(x: x, y: y, deltaX: deltaX, deltaY: deltaY, pid: pid)
         } else {
             // Standard global scroll (original behavior)
-            guard let x = scrollRequest.x, let y = scrollRequest.y else {
+            guard let rawX = scrollRequest.x, let rawY = scrollRequest.y else {
                 return try errorResponse(message: "x and y coordinates are required for non-targeted scroll", code: 400)
             }
+            let x = rawX + windowOffsetX
+            let y = rawY + windowOffsetY
             guard x >= 0 && y >= 0 else {
                 return try errorResponse(message: "Invalid coordinates: x and y must be non-negative", code: 400)
             }

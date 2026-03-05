@@ -119,6 +119,15 @@ public actor ScreenCaptureService {
         }
     }
 
+    /// Gets the frame of the main window for an app (matches the window used by captureWindowByApp)
+    /// - Parameter appName: The application name to search for
+    /// - Returns: The window frame in screen coordinates, or nil if not found
+    public func getMainWindowFrame(appName: String) async throws -> WindowFrame? {
+        let windows = try await findWindowsByApp(appName: appName)
+        let window = windows.first(where: { $0.isOnScreen }) ?? windows.first
+        return window?.frame
+    }
+
     /// Finds windows belonging to an application by name
     /// - Parameter appName: The application name to search for (case-insensitive partial match)
     /// - Returns: Array of window info with IDs, titles, and frames

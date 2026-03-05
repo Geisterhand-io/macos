@@ -277,55 +277,10 @@ struct AllEndpointsRespondTests {
         }
     }
 
-    @Test("POST /click with valid coords returns JSON")
-    func clickResponds() async throws {
-        try await withTestApp { client in
-            let body = jsonBody(["x": 100, "y": 100])
-            try await client.execute(uri: "/click", method: .post, headers: jsonHeaders, body: body) { response in
-                #expect(jsonDict(response.body) != nil)
-            }
-        }
-    }
-
-    @Test("POST /click/element with criteria returns JSON")
-    func clickElementResponds() async throws {
-        try await withTestApp { client in
-            let body = jsonBody(["title": "Nonexistent", "role": "AXButton"])
-            try await client.execute(uri: "/click/element", method: .post, headers: jsonHeaders, body: body) { response in
-                #expect(jsonDict(response.body) != nil)
-            }
-        }
-    }
-
-    @Test("POST /type with valid text returns JSON")
-    func typeResponds() async throws {
-        try await withTestApp { client in
-            let body = jsonBody(["text": "hello"])
-            try await client.execute(uri: "/type", method: .post, headers: jsonHeaders, body: body) { response in
-                #expect(jsonDict(response.body) != nil)
-            }
-        }
-    }
-
-    @Test("POST /key with valid key returns JSON")
-    func keyResponds() async throws {
-        try await withTestApp { client in
-            let body = jsonBody(["key": "a"])
-            try await client.execute(uri: "/key", method: .post, headers: jsonHeaders, body: body) { response in
-                #expect(jsonDict(response.body) != nil)
-            }
-        }
-    }
-
-    @Test("POST /scroll with valid params returns JSON")
-    func scrollResponds() async throws {
-        try await withTestApp { client in
-            let body = jsonBody(["x": 100, "y": 100, "delta_y": -10])
-            try await client.execute(uri: "/scroll", method: .post, headers: jsonHeaders, body: body) { response in
-                #expect(jsonDict(response.body) != nil)
-            }
-        }
-    }
+    // NOTE: Real-event tests (click, type, key, scroll with valid params) were removed
+    // because they send actual CGEvents to the system — moving the mouse, typing text,
+    // pressing keys — which disrupts the developer's workflow. The error/validation tests
+    // above already verify JSON parsing and response format for these endpoints.
 
     @Test("POST /wait with criteria returns JSON")
     func waitResponds() async throws {

@@ -64,7 +64,8 @@ public struct ClickRoute: Sendable {
         )
 
         // Decide whether to use accessibility action or mouse click
-        let useAccessibilityAction = elementRequest.useAccessibilityAction ?? false
+        // In geisterhand-run mode, default to accessibility action (non-disruptive)
+        let useAccessibilityAction = elementRequest.useAccessibilityAction ?? (targetApp != nil)
 
         if useAccessibilityAction {
             // Use AX press action
@@ -113,6 +114,7 @@ public struct ClickRoute: Sendable {
 
     /// Handles POST /click request
     /// Body: { "x": number, "y": number, "button": "left"|"right"|"center", "click_count": number, "modifiers": ["cmd", "shift", ...] }
+    @MainActor
     public func handle(_ request: Request, context: some RequestContext) async throws -> Response {
         let mouseController = MouseController.shared
 
@@ -130,6 +132,26 @@ public struct ClickRoute: Sendable {
         // Validate coordinates
         guard clickRequest.x >= 0 && clickRequest.y >= 0 else {
             return try errorResponse(message: "Invalid coordinates: x and y must be non-negative", code: 400)
+        }
+
+        // In geisterhand-run mode, translate window-relative → screen-absolute
+        // and use accessibility press instead of CGEvent mouse click (non-disruptive).
+        if let targetApp = targetApp {
+            var x = clickRequest.x
+            var y = clickRequest.y
+            if let frame = try? await ScreenCaptureService.shared.getMainWindowFrame(appName: targetApp.appName) {
+                x += frame.x
+                y += frame.y
+            }
+
+            let result = AccessibilityService.shared.pressElementAtPosition(pid: targetApp.pid, x: x, y: y)
+            if result.success {
+                let response = ClickResponse(success: true, x: x, y: y, button: "left")
+                return try encodeJSON(response)
+            } else {
+                let response = ClickResponse(success: false, x: x, y: y, button: "left", error: result.error)
+                return try encodeJSON(response, status: .badRequest)
+            }
         }
 
         let button = clickRequest.button ?? .left
