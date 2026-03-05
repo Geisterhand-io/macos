@@ -63,8 +63,9 @@ public struct MenuRoute: Sendable {
             return try errorResponse(message: "Menu path cannot be empty", code: 400)
         }
 
-        // Trigger menu
-        let response = service.triggerMenu(appName: effectiveApp, path: triggerRequest.path, background: triggerRequest.background ?? false)
+        // Trigger menu (always background in run mode to avoid activating the app)
+        let background = triggerRequest.background ?? (targetApp != nil)
+        let response = service.triggerMenu(appName: effectiveApp, path: triggerRequest.path, background: background)
 
         if response.success {
             return try encodeJSON(response)

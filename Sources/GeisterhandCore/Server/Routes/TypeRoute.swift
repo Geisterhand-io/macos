@@ -40,15 +40,16 @@ public struct TypeRoute: Sendable {
         // Check if this is an element-targeted (background mode) request
         let hasElementTarget = typeRequest.path != nil || typeRequest.role != nil || typeRequest.title != nil || typeRequest.titleContains != nil
 
-        if mode == "keys" {
-            // Character-by-character CGEvent key presses
+        if mode == "keys" && targetApp == nil {
+            // Character-by-character CGEvent key presses (standalone server only).
+            // In run mode, keys mode falls through to setValue below to avoid activating the app.
             let effectivePid: Int32?
             if let pid = typeRequest.pid {
                 effectivePid = pid
             } else if let path = typeRequest.path {
                 effectivePid = path.pid
             } else {
-                effectivePid = targetApp?.pid
+                effectivePid = nil
             }
 
             // If element targeting params are present, focus the element first
