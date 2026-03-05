@@ -359,13 +359,23 @@ struct Run: AsyncParsableCommand {
         }
 
         // Monitor target app/process termination in the background
+        nonisolated(unsafe) let appNameCopy = appName
         switch target {
         case .app(let runningApp):
             Task.detached {
                 while true {
                     try await Task.sleep(nanoseconds: 1_000_000_000)
                     if runningApp.isTerminated {
-                        Darwin.exit(0)
+                        let info: [String: Any] = [
+                            "event": "terminated",
+                            "app": appNameCopy,
+                            "pid": Int(runningApp.processIdentifier)
+                        ]
+                        if let data = try? JSONSerialization.data(withJSONObject: info),
+                           let json = String(data: data, encoding: .utf8) {
+                            FileHandle.standardError.write(Data((json + "\n").utf8))
+                        }
+                        Darwin.exit(1)
                     }
                 }
             }
@@ -374,7 +384,24 @@ struct Run: AsyncParsableCommand {
                 while true {
                     try await Task.sleep(nanoseconds: 1_000_000_000)
                     if !process.isRunning {
-                        Darwin.exit(0)
+                        let status = process.terminationStatus
+                        let reason: String
+                        switch process.terminationReason {
+                        case .exit: reason = "exited"
+                        case .uncaughtSignal: reason = "crashed"
+                        @unknown default: reason = "terminated"
+                        }
+                        let info: [String: Any] = [
+                            "event": reason,
+                            "app": appNameCopy,
+                            "pid": Int(process.processIdentifier),
+                            "exit_code": Int(status)
+                        ]
+                        if let data = try? JSONSerialization.data(withJSONObject: info),
+                           let json = String(data: data, encoding: .utf8) {
+                            FileHandle.standardError.write(Data((json + "\n").utf8))
+                        }
+                        Darwin.exit(status == 0 ? 0 : 1)
                     }
                 }
             }
