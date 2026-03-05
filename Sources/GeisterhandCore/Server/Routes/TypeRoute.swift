@@ -67,7 +67,7 @@ public struct TypeRoute: Sendable {
             // In geisterhand-run mode without explicit targeting:
             // Use setValue on the focused element (non-disruptive, reliable).
             let service = AccessibilityService.shared
-            let result = service.setValueOnFocusedElement(pid: targetApp.pid, value: typeRequest.text)
+            let result = service.setValueOnTargetElement(pid: targetApp.pid, value: typeRequest.text)
             if result.success {
                 let response = TypeResponse(success: true, charactersTyped: typeRequest.text.count)
                 return try encodeJSON(response)

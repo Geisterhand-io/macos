@@ -14,6 +14,10 @@ public final class AccessibilityService {
     /// Operation timeout in seconds
     public static let operationTimeout: TimeInterval = 5.0
 
+    /// Last element selected via coordinate-based click in run mode.
+    /// Used by /type to setValue without needing to focus (which activates the app).
+    public var lastClickedElement: AXUIElement?
+
     private init() {}
 
     // MARK: - Public API
@@ -334,13 +338,9 @@ public final class AccessibilityService {
         let textRoles: Set<String> = ["AXTextField", "AXTextArea", "AXSecureTextField", "AXComboBox", "AXSearchField"]
 
         if textRoles.contains(role) {
-            // Focus the text field so subsequent /type can target it
-            let focusResult = AXUIElementSetAttributeValue(element, kAXFocusedAttribute as CFString, true as CFTypeRef)
-            if focusResult == .success {
-                return ActionResponse(success: true, action: "focus")
-            } else {
-                return ActionResponse(success: false, action: "focus", error: "AX focus failed (error: \(focusResult.rawValue))")
-            }
+            // Store the element so /type can setValue on it without focusing (which activates the app)
+            lastClickedElement = element
+            return ActionResponse(success: true, action: "select")
         } else {
             let actionResult = AXUIElementPerformAction(element, kAXPressAction as CFString)
             if actionResult == .success {
@@ -351,19 +351,28 @@ public final class AccessibilityService {
         }
     }
 
-    /// Set value on the currently focused element in an application
+    /// Set value on the last clicked element (from /click), or fall back to the focused element.
     /// - Parameters:
     ///   - pid: Process ID of the target application
     ///   - value: The value to set
     /// - Returns: ActionResponse indicating success/failure
-    public func setValueOnFocusedElement(pid: Int32, value: String) -> ActionResponse {
-        let appElement = AXUIElementCreateApplication(pid)
+    public func setValueOnTargetElement(pid: Int32, value: String) -> ActionResponse {
+        // Prefer the element stored by the last /click (avoids needing focus/activation)
+        if let element = lastClickedElement {
+            let setResult = AXUIElementSetAttributeValue(element, kAXValueAttribute as CFString, value as CFTypeRef)
+            if setResult == .success {
+                return ActionResponse(success: true, action: "setValue")
+            }
+            // If stored element is stale, fall through to focused element
+        }
 
+        // Fall back to the focused element
+        let appElement = AXUIElementCreateApplication(pid)
         var focusedRef: CFTypeRef?
         let focusedResult = AXUIElementCopyAttributeValue(appElement, kAXFocusedUIElementAttribute as CFString, &focusedRef)
 
         guard focusedResult == .success, let focusedElement = focusedRef as! AXUIElement? else {
-            return ActionResponse(success: false, action: "setValue", error: "No focused element found in application")
+            return ActionResponse(success: false, action: "setValue", error: "No element selected (use /click on a text field first, or pass role/title to /type)")
         }
 
         let setResult = AXUIElementSetAttributeValue(focusedElement, kAXValueAttribute as CFString, value as CFTypeRef)
