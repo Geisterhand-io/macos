@@ -4,7 +4,7 @@ import AppKit
 
 /// Handler for /status endpoint
 public struct StatusRoute: Sendable {
-    public static let version = "1.3.0"
+    public static let version = "1.3.1"
     let targetApp: TargetApp?
 
     public init(targetApp: TargetApp? = nil) {

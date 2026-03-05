@@ -1,7 +1,6 @@
 import Foundation
 import CoreGraphics
 import Carbon.HIToolbox
-import CAXKeyboardEvent
 
 /// Controls keyboard input using CGEvent
 public final class KeyboardController: Sendable {
@@ -103,29 +102,26 @@ public final class KeyboardController: Sendable {
             throw KeyboardError.unknownKey(key)
         }
 
-        let appElement = AXUIElementCreateApplication(pid_t(targetPid))
-
-        // Press modifiers down
-        for modifier in modifiers {
-            try pressModifierDown(modifier, targetPid: targetPid)
-        }
+        let pid = pid_t(targetPid)
+        let modifierFlags = self.modifierFlags(for: modifiers)
 
         // Key down
-        let downResult = CAXPostKeyboardEvent(appElement, 0, CGKeyCode(keyCode), true)
-        guard downResult == .success else {
+        guard let keyDown = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: true) else {
             throw KeyboardError.eventCreationFailed
         }
+        if !modifiers.isEmpty {
+            keyDown.flags = modifierFlags
+        }
+        keyDown.postToPid(pid)
 
         // Key up
-        let upResult = CAXPostKeyboardEvent(appElement, 0, CGKeyCode(keyCode), false)
-        guard upResult == .success else {
+        guard let keyUp = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: false) else {
             throw KeyboardError.eventCreationFailed
         }
-
-        // Release modifiers
-        for modifier in modifiers.reversed() {
-            try releaseModifier(modifier, targetPid: targetPid)
+        if !modifiers.isEmpty {
+            keyUp.flags = modifierFlags
         }
+        keyUp.postToPid(pid)
     }
 
     /// Holds a key down without releasing
@@ -173,23 +169,27 @@ public final class KeyboardController: Sendable {
     // MARK: - Private Helpers
 
     private func typeUnicodeCharacter(_ character: Character, targetPid: Int32? = nil) throws {
-        // For PID-targeted typing, prefer CAXPostKeyboardEvent when possible
+        // For PID-targeted typing with known key codes, use CGEvent.postToPid
         if let pid = targetPid, let mapping = KeyCodeMap.keyCodeForCharacter(character) {
-            let appElement = AXUIElementCreateApplication(pid_t(pid))
+            let pidT = pid_t(pid)
 
-            // Press shift if needed
-            if mapping.needsShift {
-                CAXPostKeyboardEvent(appElement, 0, CGKeyCode(kVK_Shift), true)
+            // Key down
+            guard let keyDown = CGEvent(keyboardEventSource: nil, virtualKey: mapping.keyCode, keyDown: true) else {
+                throw KeyboardError.eventCreationFailed
             }
-
-            // Key down + up
-            CAXPostKeyboardEvent(appElement, 0, CGKeyCode(mapping.keyCode), true)
-            CAXPostKeyboardEvent(appElement, 0, CGKeyCode(mapping.keyCode), false)
-
-            // Release shift if needed
             if mapping.needsShift {
-                CAXPostKeyboardEvent(appElement, 0, CGKeyCode(kVK_Shift), false)
+                keyDown.flags = .maskShift
             }
+            keyDown.postToPid(pidT)
+
+            // Key up
+            guard let keyUp = CGEvent(keyboardEventSource: nil, virtualKey: mapping.keyCode, keyDown: false) else {
+                throw KeyboardError.eventCreationFailed
+            }
+            if mapping.needsShift {
+                keyUp.flags = .maskShift
+            }
+            keyUp.postToPid(pidT)
             return
         }
 
@@ -247,22 +247,19 @@ public final class KeyboardController: Sendable {
 
     private func pressModifierDown(_ modifier: KeyModifier, targetPid: Int32) throws {
         let keyCode = modifierKeyCode(for: modifier)
-        let appElement = AXUIElementCreateApplication(pid_t(targetPid))
-
-        let result = CAXPostKeyboardEvent(appElement, 0, CGKeyCode(keyCode), true)
-        guard result == .success else {
+        guard let event = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: true) else {
             throw KeyboardError.eventCreationFailed
         }
+        event.flags = singleModifierFlag(for: modifier)
+        event.postToPid(pid_t(targetPid))
     }
 
     private func releaseModifier(_ modifier: KeyModifier, targetPid: Int32) throws {
         let keyCode = modifierKeyCode(for: modifier)
-        let appElement = AXUIElementCreateApplication(pid_t(targetPid))
-
-        let result = CAXPostKeyboardEvent(appElement, 0, CGKeyCode(keyCode), false)
-        guard result == .success else {
+        guard let event = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: false) else {
             throw KeyboardError.eventCreationFailed
         }
+        event.postToPid(pid_t(targetPid))
     }
 
     private func modifierKeyCode(for modifier: KeyModifier) -> UInt16 {
