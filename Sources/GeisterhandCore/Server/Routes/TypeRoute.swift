@@ -63,9 +63,21 @@ public struct TypeRoute: Sendable {
         } else if hasElementTarget {
             // Query-based element targeting: find element then setValue
             return try handleElementQuery(typeRequest: typeRequest, effectivePid: typeRequest.pid ?? targetApp?.pid)
+        } else if let targetApp = targetApp {
+            // In geisterhand-run mode without explicit targeting:
+            // Use setValue on the focused element (non-disruptive, reliable).
+            let service = AccessibilityService.shared
+            let result = service.setValueOnFocusedElement(pid: targetApp.pid, value: typeRequest.text)
+            if result.success {
+                let response = TypeResponse(success: true, charactersTyped: typeRequest.text.count)
+                return try encodeJSON(response)
+            } else {
+                let response = TypeResponse(success: false, charactersTyped: 0, error: result.error ?? "Failed to set value on focused element")
+                return try encodeJSON(response, status: .internalServerError)
+            }
         } else {
-            // Standard CGEvent keyboard typing
-            return try handleCGEventType(typeRequest: typeRequest, targetPid: targetApp?.pid)
+            // Standard CGEvent keyboard typing (no targetApp, standalone server mode)
+            return try handleCGEventType(typeRequest: typeRequest, targetPid: nil)
         }
     }
 

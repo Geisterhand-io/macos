@@ -312,7 +312,8 @@ public final class AccessibilityService {
         return GetElementResponse(success: true, app: appInfo, element: info)
     }
 
-    /// Find and press the element at the given screen-absolute position
+    /// Find and interact with the element at the given screen-absolute position.
+    /// Text fields are focused (so subsequent /type works). Other elements are pressed.
     /// - Parameters:
     ///   - pid: Process ID of the target application
     ///   - x: Screen-absolute X coordinate
@@ -328,11 +329,48 @@ public final class AccessibilityService {
             return ActionResponse(success: false, action: "press", error: "No element found at position (\(x), \(y))")
         }
 
-        let actionResult = AXUIElementPerformAction(element, kAXPressAction as CFString)
-        if actionResult == .success {
-            return ActionResponse(success: true, action: "press")
+        // Check the role to decide the action: focus text fields, press everything else
+        let role = getStringAttribute(element, kAXRoleAttribute) ?? ""
+        let textRoles: Set<String> = ["AXTextField", "AXTextArea", "AXSecureTextField", "AXComboBox", "AXSearchField"]
+
+        if textRoles.contains(role) {
+            // Focus the text field so subsequent /type can target it
+            let focusResult = AXUIElementSetAttributeValue(element, kAXFocusedAttribute as CFString, true as CFTypeRef)
+            if focusResult == .success {
+                return ActionResponse(success: true, action: "focus")
+            } else {
+                return ActionResponse(success: false, action: "focus", error: "AX focus failed (error: \(focusResult.rawValue))")
+            }
         } else {
-            return ActionResponse(success: false, action: "press", error: "AX press action failed (error: \(actionResult.rawValue))")
+            let actionResult = AXUIElementPerformAction(element, kAXPressAction as CFString)
+            if actionResult == .success {
+                return ActionResponse(success: true, action: "press")
+            } else {
+                return ActionResponse(success: false, action: "press", error: "AX press action failed (error: \(actionResult.rawValue))")
+            }
+        }
+    }
+
+    /// Set value on the currently focused element in an application
+    /// - Parameters:
+    ///   - pid: Process ID of the target application
+    ///   - value: The value to set
+    /// - Returns: ActionResponse indicating success/failure
+    public func setValueOnFocusedElement(pid: Int32, value: String) -> ActionResponse {
+        let appElement = AXUIElementCreateApplication(pid)
+
+        var focusedRef: CFTypeRef?
+        let focusedResult = AXUIElementCopyAttributeValue(appElement, kAXFocusedUIElementAttribute as CFString, &focusedRef)
+
+        guard focusedResult == .success, let focusedElement = focusedRef as! AXUIElement? else {
+            return ActionResponse(success: false, action: "setValue", error: "No focused element found in application")
+        }
+
+        let setResult = AXUIElementSetAttributeValue(focusedElement, kAXValueAttribute as CFString, value as CFTypeRef)
+        if setResult == .success {
+            return ActionResponse(success: true, action: "setValue")
+        } else {
+            return ActionResponse(success: false, action: "setValue", error: "AX setValue failed (error: \(setResult.rawValue))")
         }
     }
 
