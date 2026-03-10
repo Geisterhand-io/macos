@@ -48,10 +48,16 @@ jobs:
           # Allow codesign to access the keychain
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
 
+          # Verify the identity was imported
+          security find-identity -v -p codesigning $KEYCHAIN_PATH
+
       - name: Sign app
         env:
           DEVELOPER_ID: ${{ secrets.DEVELOPER_ID }}
-        run: make sign DEVELOPER_ID="$DEVELOPER_ID"
+        run: |
+          echo "Signing with identity: $DEVELOPER_ID"
+          security find-identity -v -p codesigning
+          make sign DEVELOPER_ID="$DEVELOPER_ID"
 
       - name: Create DMG
         env:
