@@ -25,8 +25,14 @@ class Geisterhand < Formula
   depends_on :macos => :sonoma
 
   def install
-    system "swift", "build", "-c", "release", "--arch", "arm64", "--arch", "x86_64", "--disable-sandbox"
-    bin.install ".build/apple/Products/Release/geisterhand"
+    system "swift", "build", "-c", "release", "--triple", "arm64-apple-macosx", "--disable-sandbox"
+    system "swift", "build", "-c", "release", "--triple", "x86_64-apple-macosx", "--disable-sandbox"
+    mkdir_p ".build/universal"
+    system "lipo", "-create",
+           ".build/arm64-apple-macosx/release/geisterhand",
+           ".build/x86_64-apple-macosx/release/geisterhand",
+           "-output", ".build/universal/geisterhand"
+    bin.install ".build/universal/geisterhand"
   end
 
   def caveats

@@ -25,14 +25,11 @@ jobs:
       - name: Run tests
         run: swift test
 
-      - name: Build universal release
-        run: swift build -c release --arch arm64 --arch x86_64
-
-      - name: Create app bundle
+      - name: Build universal release and create app bundle
         run: make app
 
       - name: Verify app bundle
         run: |
-          test -f ".build/apple/Products/Release/Geisterhand.app/Contents/MacOS/GeisterhandApp"
-          test -f ".build/apple/Products/Release/Geisterhand.app/Contents/MacOS/geisterhand"
-          test -f ".build/apple/Products/Release/Geisterhand.app/Contents/Info.plist"
+          test -f ".build/universal/Geisterhand.app/Contents/MacOS/GeisterhandApp"
+          test -f ".build/universal/Geisterhand.app/Contents/MacOS/geisterhand"
+          test -f ".build/universal/Geisterhand.app/Contents/Info.plist"

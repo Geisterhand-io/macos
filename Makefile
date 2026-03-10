@@ -14,7 +14,7 @@ BUNDLE_ID := com.geisterhand.app
 VERSION := $(shell grep -A1 'CFBundleShortVersionString' Sources/GeisterhandApp/Info.plist | tail -1 | sed 's/.*<string>\(.*\)<\/string>.*/\1/')
 
 # Paths
-BUILD_DIR := .build/apple/Products/Release
+BUILD_DIR := .build/universal
 APP_BUNDLE := $(BUILD_DIR)/$(APP_NAME).app
 DMG_NAME := $(APP_NAME)-$(VERSION).dmg
 DMG_PATH := $(BUILD_DIR)/$(DMG_NAME)
@@ -67,8 +67,21 @@ help:
 
 # Build universal release binary (arm64 + x86_64)
 build:
-	@echo "Building universal release binary..."
-	swift build -c release --arch arm64 --arch x86_64
+	@echo "Building release binary (arm64)..."
+	swift build -c release --triple arm64-apple-macosx
+	@echo "Building release binary (x86_64)..."
+	swift build -c release --triple x86_64-apple-macosx
+	@echo "Creating universal binaries..."
+	@mkdir -p "$(BUILD_DIR)"
+	lipo -create \
+		.build/arm64-apple-macosx/release/geisterhand \
+		.build/x86_64-apple-macosx/release/geisterhand \
+		-output "$(BUILD_DIR)/geisterhand"
+	lipo -create \
+		.build/arm64-apple-macosx/release/GeisterhandApp \
+		.build/x86_64-apple-macosx/release/GeisterhandApp \
+		-output "$(BUILD_DIR)/GeisterhandApp"
+	@echo "Universal binaries created"
 
 # Create app bundle structure
 app: build
@@ -204,7 +217,7 @@ dmg-unsigned: app
 clean:
 	@echo "Cleaning build artifacts..."
 	swift package clean
-	rm -rf .build/apple
+	rm -rf .build/universal .build/arm64-apple-macosx .build/x86_64-apple-macosx
 	@echo "Clean complete"
 
 # Show signing identities
