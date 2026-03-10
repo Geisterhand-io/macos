@@ -12,7 +12,7 @@ if [ -z "$VERSION" ]; then
 fi
 
 APP_NAME="Geisterhand"
-BUILD_DIR=".build/release"
+BUILD_DIR=".build/apple/Products/Release"
 DMG_PATH="$BUILD_DIR/$APP_NAME-$VERSION.dmg"
 GITHUB_REPO="Geisterhand-io/macos"
 TAP_REPO="Geisterhand-io/homebrew-tap"

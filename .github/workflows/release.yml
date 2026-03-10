@@ -25,8 +25,8 @@ jobs:
         id: version
         run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
 
-      - name: Build release
-        run: swift build -c release
+      - name: Build universal release
+        run: swift build -c release --arch arm64 --arch x86_64
 
       - name: Create app bundle
         run: make app
@@ -67,23 +67,23 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           NOTARIZE_PASSWORD: ${{ secrets.NOTARIZE_PASSWORD }}
         run: |
-          xcrun notarytool submit ".build/release/${{ env.APP_NAME }}-${{ steps.version.outputs.VERSION }}.dmg" \
+          xcrun notarytool submit ".build/apple/Products/Release/${{ env.APP_NAME }}-${{ steps.version.outputs.VERSION }}.dmg" \
             --apple-id "$APPLE_ID" \
             --team-id "$APPLE_TEAM_ID" \
             --password "$NOTARIZE_PASSWORD" \
             --wait
 
       - name: Staple notarization ticket
-        run: xcrun stapler staple ".build/release/${{ env.APP_NAME }}-${{ steps.version.outputs.VERSION }}.dmg"
+        run: xcrun stapler staple ".build/apple/Products/Release/${{ env.APP_NAME }}-${{ steps.version.outputs.VERSION }}.dmg"
 
       - name: Verify notarization
         run: |
-          spctl --assess --verbose=4 --type install ".build/release/${{ env.APP_NAME }}-${{ steps.version.outputs.VERSION }}.dmg"
+          spctl --assess --verbose=4 --type install ".build/apple/Products/Release/${{ env.APP_NAME }}-${{ steps.version.outputs.VERSION }}.dmg"
 
       - name: Calculate SHA256
         id: sha
         run: |
-          SHA=$(shasum -a 256 ".build/release/${{ env.APP_NAME }}-${{ steps.version.outputs.VERSION }}.dmg" | awk '{print $1}')
+          SHA=$(shasum -a 256 ".build/apple/Products/Release/${{ env.APP_NAME }}-${{ steps.version.outputs.VERSION }}.dmg" | awk '{print $1}')
           echo "SHA256=$SHA" >> $GITHUB_OUTPUT
           echo "SHA256: $SHA"
 
@@ -94,7 +94,7 @@ jobs:
           draft: false
           prerelease: false
           files: |
-            .build/release/${{ env.APP_NAME }}-${{ steps.version.outputs.VERSION }}.dmg
+            .build/apple/Products/Release/${{ env.APP_NAME }}-${{ steps.version.outputs.VERSION }}.dmg
           body: |
             ## Geisterhand v${{ steps.version.outputs.VERSION }}
 
@@ -125,12 +125,34 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Output cask formula update
+      - name: Calculate source SHA256
+        id: src_sha
         run: |
-          echo "========================================"
-          echo "Update homebrew-geisterhand cask formula:"
-          echo "========================================"
-          echo ""
-          echo "  version \"${{ steps.version.outputs.VERSION }}\""
-          echo "  sha256 \"${{ steps.sha.outputs.SHA256 }}\""
-          echo ""
+          SRC_SHA=$(curl -sL "https://github.com/${{ github.repository }}/archive/refs/tags/v${{ steps.version.outputs.VERSION }}.tar.gz" | shasum -a 256 | awk '{print $1}')
+          echo "SHA256=$SRC_SHA" >> $GITHUB_OUTPUT
+          echo "Source SHA256: $SRC_SHA"
+
+      - name: Update Homebrew tap
+        env:
+          TAP_GITHUB_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          DMG_SHA="${{ steps.sha.outputs.SHA256 }}"
+          SRC_SHA="${{ steps.src_sha.outputs.SHA256 }}"
+
+          git clone "https://x-access-token:${TAP_GITHUB_TOKEN}@github.com/Geisterhand-io/homebrew-tap.git" tap-repo
+          cd tap-repo
+
+          # Update cask
+          sed -i '' "s/version \"[^\"]*\"/version \"$VERSION\"/" Casks/geisterhand.rb
+          sed -i '' "s/sha256 \"[^\"]*\"/sha256 \"$DMG_SHA\"/" Casks/geisterhand.rb
+
+          # Update source formula
+          sed -i '' "s|/v[0-9]*\.[0-9]*\.[0-9]*.tar.gz|/v$VERSION.tar.gz|" Formula/geisterhand.rb
+          sed -i '' "s/sha256 \"[^\"]*\"/sha256 \"$SRC_SHA\"/" Formula/geisterhand.rb
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Update to v$VERSION"
+          git push

@@ -14,7 +14,7 @@ BUNDLE_ID := com.geisterhand.app
 VERSION := $(shell grep -A1 'CFBundleShortVersionString' Sources/GeisterhandApp/Info.plist | tail -1 | sed 's/.*<string>\(.*\)<\/string>.*/\1/')
 
 # Paths
-BUILD_DIR := .build/release
+BUILD_DIR := .build/apple/Products/Release
 APP_BUNDLE := $(BUILD_DIR)/$(APP_NAME).app
 DMG_NAME := $(APP_NAME)-$(VERSION).dmg
 DMG_PATH := $(BUILD_DIR)/$(DMG_NAME)
@@ -65,10 +65,10 @@ help:
 	@echo ""
 	@echo "Current version: $(VERSION)"
 
-# Build release binary
+# Build universal release binary (arm64 + x86_64)
 build:
-	@echo "Building release binary..."
-	swift build -c release
+	@echo "Building universal release binary..."
+	swift build -c release --arch arm64 --arch x86_64
 
 # Create app bundle structure
 app: build
@@ -204,8 +204,7 @@ dmg-unsigned: app
 clean:
 	@echo "Cleaning build artifacts..."
 	swift package clean
-	rm -rf "$(BUILD_DIR)/$(APP_NAME).app"
-	rm -f "$(BUILD_DIR)/$(APP_NAME)-*.dmg"
+	rm -rf .build/apple
 	@echo "Clean complete"
 
 # Show signing identities

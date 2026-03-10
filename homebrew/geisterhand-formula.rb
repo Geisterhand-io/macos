@@ -25,8 +25,8 @@ class Geisterhand < Formula
   depends_on :macos => :sonoma
 
   def install
-    system "swift", "build", "-c", "release", "--disable-sandbox"
-    bin.install ".build/release/geisterhand"
+    system "swift", "build", "-c", "release", "--arch", "arm64", "--arch", "x86_64", "--disable-sandbox"
+    bin.install ".build/apple/Products/Release/geisterhand"
   end
 
   def caveats
