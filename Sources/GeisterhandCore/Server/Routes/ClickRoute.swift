@@ -130,17 +130,14 @@ public struct ClickRoute: Sendable {
             return try errorResponse(message: "Invalid request body: \(error.localizedDescription)", code: 400)
         }
 
-        // Validate coordinates
-        guard clickRequest.x >= 0 && clickRequest.y >= 0 else {
-            return try errorResponse(message: "Invalid coordinates: x and y must be non-negative", code: 400)
-        }
+        // Note: coordinates can be negative on multi-monitor setups
 
         // In geisterhand-run mode, translate window-relative → screen-absolute
         // and use accessibility press instead of CGEvent mouse click (non-disruptive).
         if let targetApp = targetApp {
             var x = clickRequest.x
             var y = clickRequest.y
-            if let frame = try? await ScreenCaptureService.shared.getMainWindowFrame(appName: targetApp.appName) {
+            if let frame = try? await ScreenCaptureService.shared.getMainWindowFrame(pid: targetApp.pid) {
                 x += frame.x
                 y += frame.y
             }

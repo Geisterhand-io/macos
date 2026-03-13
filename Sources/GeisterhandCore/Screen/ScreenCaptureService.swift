@@ -170,6 +170,70 @@ public actor ScreenCaptureService {
         return (image, window)
     }
 
+    // MARK: - CGWindowList-based capture (no ScreenCaptureKit — works in background processes)
+
+    /// Finds windows belonging to a specific process by PID using CGWindowList API
+    public func findWindowsByPid(pid: pid_t) async throws -> [WindowInfo] {
+        guard let windowList = CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as? [[CFString: Any]] else {
+            return []
+        }
+        var results: [WindowInfo] = []
+        for info in windowList {
+            guard let ownerPid = info[kCGWindowOwnerPID] as? Int32, ownerPid == pid,
+                  let windowId = info[kCGWindowNumber] as? UInt32 else { continue }
+            // Skip tiny/invisible windows
+            guard let bounds = info[kCGWindowBounds] as? [String: Double],
+                  let x = bounds["X"], let y = bounds["Y"],
+                  let w = bounds["Width"], let h = bounds["Height"],
+                  w > 50 && h > 50 else { continue }
+            let title = info[kCGWindowName] as? String
+            let ownerName = info[kCGWindowOwnerName] as? String
+            let isOnScreen = (info[kCGWindowIsOnscreen] as? Bool) ?? false
+            results.append(WindowInfo(
+                windowId: windowId,
+                title: title,
+                appName: ownerName,
+                bundleIdentifier: nil,
+                frame: WindowFrame(x: x, y: y, width: w, height: h),
+                isOnScreen: isOnScreen
+            ))
+        }
+        return results
+    }
+
+    /// Captures a window by PID using CGWindowListCreateImage (no ScreenCaptureKit)
+    public func captureWindowByPid(pid: pid_t) async throws -> (image: CGImage, windowInfo: WindowInfo) {
+        let windows = try await findWindowsByPid(pid: pid)
+        guard let window = windows.first(where: { $0.isOnScreen }) ?? windows.first else {
+            throw ScreenCaptureError.windowNotFoundByName("PID \(pid)")
+        }
+        guard let image = CGWindowListCreateImage(.null, .optionIncludingWindow,
+                                                  CGWindowID(window.windowId), [.boundsIgnoreFraming]) else {
+            throw ScreenCaptureError.captureFailed("CGWindowListCreateImage failed for PID \(pid)")
+        }
+        return (image, window)
+    }
+
+    /// Captures a window by PID and returns PNG data
+    public func captureWindowByPidAsPNG(pid: pid_t) async throws -> (data: Data, windowInfo: WindowInfo) {
+        let (image, windowInfo) = try await captureWindowByPid(pid: pid)
+        let data = try encoder.encodePNG(image)
+        return (data, windowInfo)
+    }
+
+    /// Captures a window by PID and returns base64-encoded PNG
+    public func captureWindowByPidAsBase64(pid: pid_t) async throws -> (base64: String, windowInfo: WindowInfo) {
+        let (data, windowInfo) = try await captureWindowByPidAsPNG(pid: pid)
+        return (encoder.encodeBase64(data), windowInfo)
+    }
+
+    /// Gets the frame of the main window for a PID using CGWindowList
+    public func getMainWindowFrame(pid: pid_t) async throws -> WindowFrame? {
+        let windows = try await findWindowsByPid(pid: pid)
+        let window = windows.first(where: { $0.isOnScreen }) ?? windows.first
+        return window?.frame
+    }
+
     /// Captures a window and returns PNG data with window info
     public func captureWindowAsPNG(windowId: CGWindowID) async throws -> (data: Data, width: Int, height: Int) {
         let image = try await captureWindow(windowId: windowId)

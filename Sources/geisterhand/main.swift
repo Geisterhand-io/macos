@@ -17,7 +17,8 @@ struct Geisterhand: AsyncParsableCommand {
             Scroll.self,
             Status.self,
             Server.self,
-            Run.self
+            Run.self,
+            Sim.self
         ],
         defaultSubcommand: Status.self
     )
@@ -282,6 +283,12 @@ struct Server: AsyncParsableCommand {
     var verbose: Bool = false
 
     func run() async throws {
+        // Force CGS/WindowServer initialization on the main thread.
+        await MainActor.run {
+            _ = NSApplication.shared
+            _ = CGMainDisplayID()
+        }
+
         print("Starting Geisterhand server on \(host):\(port)...")
 
         let server = GeisterhandServer(host: host, port: port, verbose: verbose)
@@ -317,6 +324,13 @@ struct Run: AsyncParsableCommand {
     }
 
     func run() async throws {
+        // Force CGS/WindowServer initialization on the main thread before any
+        // ScreenCaptureKit usage — prevents CGS_REQUIRE_INIT assertion in background processes.
+        await MainActor.run {
+            _ = NSApplication.shared
+            _ = CGMainDisplayID()
+        }
+
         let target = try launchOrAttach(app: app)
 
         let pid: Int32
@@ -430,6 +444,8 @@ struct Run: AsyncParsableCommand {
             if !args.isEmpty {
                 process.arguments = args
             }
+            // Inherit parent environment (so HOME, PATH, etc. overrides are passed through)
+            process.environment = ProcessInfo.processInfo.environment
 
             try process.run()
 
@@ -518,5 +534,66 @@ struct Run: AsyncParsableCommand {
 
             throw NSError(domain: "Geisterhand", code: 1, userInfo: [NSLocalizedDescriptionKey: "Application '\(app)' launched but not found in running applications"])
         }
+    }
+}
+
+// MARK: - Sim Command (iOS Simulator mode)
+
+struct Sim: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(
+        abstract: "Start server for iOS Simulator automation (coordinates in iOS logical points)"
+    )
+
+    @Option(name: .shortAndLong, help: "Host to bind to")
+    var host: String = "127.0.0.1"
+
+    @Option(name: .shortAndLong, help: "Port to listen on (0 = auto-select)")
+    var port: Int = 0
+
+    @Flag(name: .long, help: "Enable debug logging")
+    var verbose: Bool = false
+
+    func run() async throws {
+        // Force CGS/WindowServer initialization
+        await MainActor.run {
+            _ = NSApplication.shared
+            _ = CGMainDisplayID()
+        }
+
+        // Verify simulator is running with a booted device
+        let simService = SimulatorService.shared
+        guard let device = try await simService.bootedDeviceInfo() else {
+            print("Error: No booted simulator device found. Boot one with:")
+            print("  xcrun simctl boot \"iPad Air 13\"")
+            throw ExitCode.failure
+        }
+
+        // Determine port
+        let serverPort: Int
+        if port == 0 {
+            serverPort = try GeisterhandServer.findAvailablePort(host: host)
+        } else {
+            serverPort = port
+        }
+
+        // Print JSON to stdout for the caller
+        let mapping = try? await simService.computeCoordinateMapping()
+        let info: [String: Any] = [
+            "port": serverPort,
+            "host": host,
+            "mode": "simulator",
+            "device": device.name,
+            "udid": device.udid,
+            "ios_width": mapping?.iosWidth ?? 0,
+            "ios_height": mapping?.iosHeight ?? 0,
+        ]
+        if let jsonData = try? JSONSerialization.data(withJSONObject: info, options: []),
+           let jsonString = String(data: jsonData, encoding: .utf8) {
+            print(jsonString)
+            fflush(stdout)
+        }
+
+        // Start the simulator-mode server
+        try await startSimulatorServer(host: host, port: serverPort, verbose: verbose)
     }
 }

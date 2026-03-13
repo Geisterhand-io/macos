@@ -41,7 +41,7 @@ public struct ScrollRoute: Sendable {
         var windowOffsetX: Double = 0
         var windowOffsetY: Double = 0
         if let targetApp = targetApp {
-            if let frame = try? await ScreenCaptureService.shared.getMainWindowFrame(appName: targetApp.appName) {
+            if let frame = try? await ScreenCaptureService.shared.getMainWindowFrame(pid: targetApp.pid) {
                 windowOffsetX = frame.x
                 windowOffsetY = frame.y
             }

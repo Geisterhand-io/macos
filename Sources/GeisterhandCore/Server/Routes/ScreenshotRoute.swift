@@ -25,13 +25,20 @@ public struct ScreenshotRoute: Sendable {
         let appName = request.uri.queryParameters.get("app")
         let windowIdString = request.uri.queryParameters.get("windowId")
         let windowId: UInt32? = windowIdString.flatMap { UInt32($0) }
+        let pidString = request.uri.queryParameters.get("pid")
+        let pid: Int32? = pidString.flatMap { Int32($0) }
 
         // Use targetApp as fallback for app name
         let effectiveAppName = appName ?? targetApp?.appName
+        // Use targetApp PID when no explicit app/pid/windowId specified (disambiguates multiple instances)
+        let effectivePid = pid ?? (appName == nil && windowId == nil ? targetApp?.pid : nil)
 
         do {
-            // Determine capture mode: window (by app or ID) vs screen
-            if let effectiveAppName = effectiveAppName {
+            // Determine capture mode: PID (most specific) > windowId > app name > screen
+            if let effectivePid = effectivePid {
+                // Capture by PID (disambiguates multiple instances of same app)
+                return try await captureByPid(pid: effectivePid, format: format, screenService: screenService)
+            } else if let effectiveAppName = effectiveAppName {
                 // Capture by app name
                 return try await captureByApp(appName: effectiveAppName, format: format, screenService: screenService)
             } else if let windowId = windowId {
@@ -54,6 +61,40 @@ public struct ScreenshotRoute: Sendable {
     }
 
     // MARK: - Capture Methods
+
+    private func captureByPid(pid: Int32, format: String, screenService: ScreenCaptureService) async throws -> Response {
+        switch format.lowercased() {
+        case "base64":
+            let (base64, windowInfo) = try await screenService.captureWindowByPidAsBase64(pid: pid)
+            let response = ScreenshotResponse(
+                success: true,
+                format: "base64",
+                width: Int(windowInfo.frame.width),
+                height: Int(windowInfo.frame.height),
+                data: base64,
+                window: windowInfo
+            )
+            return try encodeJSON(response)
+
+        case "jpeg", "jpg":
+            let (image, _) = try await screenService.captureWindowByPid(pid: pid)
+            let encoder = ImageEncoder()
+            let jpegData = try encoder.encodeJPEG(image, quality: 0.85)
+            return Response(
+                status: .ok,
+                headers: [.contentType: "image/jpeg"],
+                body: .init(byteBuffer: ByteBuffer(data: jpegData))
+            )
+
+        default: // png
+            let (pngData, _) = try await screenService.captureWindowByPidAsPNG(pid: pid)
+            return Response(
+                status: .ok,
+                headers: [.contentType: "image/png"],
+                body: .init(byteBuffer: ByteBuffer(data: pngData))
+            )
+        }
+    }
 
     private func captureByApp(appName: String, format: String, screenService: ScreenCaptureService) async throws -> Response {
         switch format.lowercased() {
